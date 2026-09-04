@@ -57,7 +57,8 @@ export function buildUserText(mode, items) {
       const extra = [];
       if (it.boxSize) extra.push(`1박스=${it.boxSize}개`);
       if (it.aliases?.length) extra.push(`별칭: ${it.aliases.join(', ')}`);
-      return `- ${it.name}${extra.length ? ` (${extra.join('; ')})` : ''}`;
+      const group = it.groupTitle ? ` [${it.groupTitle}]` : '';
+      return `- ${it.name}${group}${extra.length ? ` (${extra.join('; ')})` : ''}`;
     })
     .join('\n');
 
@@ -72,7 +73,8 @@ export function buildUserText(mode, items) {
       '손으로 쓴 값만 읽어서 품목별 현재 수량으로 정리하세요. "1box"처럼 박스로 적혀 있으면 unit을 box로 하세요.',
       '손으로 쓴 값이 없는 품목은 결과에 포함하지 마세요.',
       '',
-      '등록된 품목 목록(품목명은 아래 표기를 그대로 사용):',
+      '등록된 품목 목록. name에는 아래 품목명을 그대로 쓰세요(대괄호 안 분류는 참고용이며 이름에 넣지 마세요).',
+      '같은 이름이 여러 분류에 있으면(예: 레몬) 시트 위치를 보고 "레몬(주스)"처럼 구분된 등록명을 고르세요.',
       list,
     ].join('\n');
   }
@@ -83,7 +85,7 @@ export function buildUserText(mode, items) {
     '박스째 있으면 unit을 box로, 낱개는 ea로 표기하세요. 가려져서 정확히 셀 수 없으면 confidence를 낮추고 note에 적으세요.',
     '사진에 없는 품목은 결과에 포함하지 마세요.',
     '',
-    '등록된 품목 목록(품목명은 아래 표기를 그대로 사용):',
+    '등록된 품목 목록. name에는 아래 품목명을 그대로 쓰세요(대괄호 안 분류는 참고용이며 이름에 넣지 마세요).',
     list,
   ].join('\n');
 }
@@ -145,6 +147,9 @@ export function parseResponse(response) {
     const why = response.stop_details?.explanation || '';
     throw new Error(`모델이 요청을 거절했습니다. ${why}`.trim());
   }
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('모델 응답이 잘렸습니다. 사진 수를 줄여 다시 시도하세요.');
+  }
   const text = (response.content || [])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
@@ -156,10 +161,22 @@ export function parseResponse(response) {
   } catch {
     throw new Error('모델 응답을 JSON으로 해석할 수 없습니다.');
   }
-  if (response.stop_reason === 'max_tokens') {
-    throw new Error('모델 응답이 잘렸습니다. 사진 수를 줄여 다시 시도하세요.');
-  }
   return { ...sanitizeParsed(parsed), usage: response.usage, model: response.model };
+}
+
+/** SDK 오류 → 직원이 이해할 수 있는 한국어 메시지 */
+export function describeSdkError(err, Anthropic) {
+  const is = (name) => Anthropic?.[name] && err instanceof Anthropic[name];
+  if (is('APIUserAbortError')) return '취소했습니다.';
+  if (is('AuthenticationError')) return 'API 키가 올바르지 않습니다. 설정 탭에서 다시 확인하세요.';
+  if (is('PermissionDeniedError')) return '이 API 키로는 사용할 수 없는 기능입니다.';
+  if (is('RateLimitError')) return '요청 한도를 초과했습니다. 잠시 후 다시 시도하세요.';
+  if (is('APIConnectionTimeoutError')) return '응답이 너무 오래 걸려 중단했습니다. 다시 시도하세요.';
+  if (is('APIConnectionError')) return '인터넷 연결을 확인하세요.';
+  if (is('BadRequestError')) return '요청을 처리할 수 없습니다. 사진 크기나 수를 줄여 보세요.';
+  if (is('APIError')) return `API 오류 (${err.status ?? '알 수 없음'}). 잠시 후 다시 시도하세요.`;
+  if (err?.name === 'AbortError') return '취소했습니다.';
+  return null;
 }
 
 let sdkPromise = null;
@@ -175,18 +192,18 @@ async function loadSdk() {
  * @param {object} client Anthropic 클라이언트
  * @param {{mode:'sheet'|'shelf', items:object[], images:{data:string, mediaType:string}[]}} p
  */
-export async function extractWithClient(client, { mode, items, images }) {
+export async function extractWithClient(client, { mode, items, images, signal }) {
   if (!images?.length) throw new Error('사진을 선택하세요.');
   const req = buildRequest({ mode, items, images });
-  const response = await client.beta.messages.create(req);
+  const response = await client.beta.messages.create(req, signal ? { signal } : undefined);
   return parseResponse(response);
 }
 
 /**
  * 브라우저에서 호출. API 키는 사용자의 브라우저에만 저장된다.
- * @param {{apiKey:string, mode:'sheet'|'shelf', items:object[], images:{data:string, mediaType:string}[], AnthropicClass?:Function}} p
+ * @param {{apiKey:string, mode:'sheet'|'shelf', items:object[], images:{data:string, mediaType:string}[], signal?:AbortSignal, AnthropicClass?:Function}} p
  */
-export async function extractCounts({ apiKey, mode, items, images, AnthropicClass }) {
+export async function extractCounts({ apiKey, mode, items, images, signal, AnthropicClass }) {
   if (!apiKey) throw new Error('API 키가 설정되지 않았습니다. 설정 탭에서 입력하세요.');
   if (!images?.length) throw new Error('사진을 선택하세요.');
   let Anthropic;
@@ -197,7 +214,13 @@ export async function extractCounts({ apiKey, mode, items, images, AnthropicClas
     throw new Error('AI 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요.');
   }
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  return extractWithClient(client, { mode, items, images });
+  try {
+    return await extractWithClient(client, { mode, items, images, signal });
+  } catch (err) {
+    const friendly = describeSdkError(err, Anthropic);
+    if (friendly) throw new Error(friendly);
+    throw err;
+  }
 }
 
 /**

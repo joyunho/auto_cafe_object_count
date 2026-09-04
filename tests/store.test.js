@@ -42,16 +42,50 @@ test('migrate: 일부 필드만 있어도 나머지는 기본값으로 채운다
   assert.equal(s.ui.tab, 'count');
 });
 
-test('export → import 왕복', () => {
+test('export → import 왕복, API 키는 내보내지 않음', () => {
   const s = defaultState();
   s.settings.storeName = '테스트점';
+  s.settings.apiKey = 'sk-ant-SECRET';
   s.sessions.push({ id: 's1', date: '2026-09-07', status: 'submitted', counts: { 'yuja-cheong': 2 } });
   const text = exportJSON(s);
-  assert.ok(!JSON.parse(text).ui, 'ui 상태는 내보내지 않음');
+  const parsed = JSON.parse(text);
+  assert.ok(!parsed.ui, 'ui 상태는 내보내지 않음');
+  assert.ok(!('apiKey' in parsed.settings), 'API 키는 내보내지 않음');
+  assert.ok(!text.includes('sk-ant-SECRET'));
   const back = importJSON(text);
   assert.equal(back.settings.storeName, '테스트점');
+  assert.equal(back.settings.apiKey, '');
   assert.equal(back.sessions.length, 1);
   assert.equal(back.items.length, SEED_ITEMS.length);
+});
+
+test('importJSON: 백업이 아닌 JSON은 거부', () => {
+  for (const bad of ['{}', '[]', 'null', '42', '{"foo":"bar"}', '{"items":[]}', '{"items":[],"version":"1"}']) {
+    assert.throws(() => importJSON(bad), undefined, bad);
+  }
+  assert.throws(() => importJSON('not json'));
+});
+
+test('migrate: 깨진 요소를 정리해 렌더 가능한 상태로 만든다', () => {
+  const s = migrate({
+    version: 1,
+    items: [null, { id: 'a', name: 'A' }, { name: '이름만' }],
+    groups: [null, { id: 'g', title: 'G' }],
+    sessions: [{ id: 's1', status: 'draft' }, null, { id: 's2', status: 'weird', counts: 'x', date: 5 }],
+    orders: [{ id: 'o1' }, 'junk'],
+    settings: { orderDays: null, storeName: 7 },
+  });
+  assert.deepEqual(s.items.map((i) => i.id), ['a']);
+  assert.deepEqual(s.groups.map((g) => g.id), ['g']);
+  assert.equal(s.sessions.length, 2);
+  assert.deepEqual(s.sessions[0].counts, {});
+  assert.deepEqual(s.sessions[0].overrides, {});
+  assert.equal(s.sessions[1].status, 'draft');
+  assert.equal(s.sessions[1].date, '');
+  assert.deepEqual(s.orders[0].lines, []);
+  assert.deepEqual(s.settings.orderDays, [1, 4]);
+  assert.equal(s.settings.storeName, '');
+  assert.deepEqual(migrate({ settings: { orderDays: [4, 1, 1, 9, 'x'] } }).settings.orderDays, [1, 4]);
 });
 
 test('resetItems는 기록을 유지하고 품목만 되돌린다', () => {

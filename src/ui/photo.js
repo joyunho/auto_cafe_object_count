@@ -14,6 +14,14 @@ function canRun(s) {
   return ui.images.length > 0 && (ui.sample || s.settings.apiKey) && !ui.busy;
 }
 
+/** 인식된 "N박스"를 이 품목의 세는 단위로 바꿀 수 있는가 */
+function convertible(m, it) {
+  if (!it) return false;
+  if (m.unit === 'box' && it.countUnit !== 'box' && !it.boxSize) return false;
+  if (m.unit === 'ea' && it.countUnit === 'box' && !it.boxSize) return false;
+  return true;
+}
+
 function stepHtml(s) {
   const mode = s.settings.photoMode || 'sheet';
   const viaSample = !!ui.sample;
@@ -30,7 +38,7 @@ function stepHtml(s) {
             : ''
     }
     <div class="field"><label>무엇을 찍었나요?</label>
-      <select id="photo-mode">
+      <select id="photo-mode" data-change="setting" data-key="photoMode">
         <option value="sheet" ${mode === 'sheet' ? 'selected' : ''}>손글씨 재고 시트 (적힌 숫자 읽기)</option>
         <option value="shelf" ${mode === 'shelf' ? 'selected' : ''}>선반/냉장고 실물 (개수 세기)</option>
       </select></div>
@@ -55,7 +63,7 @@ function resultHtml(s, app) {
   const sess = app.activeSession();
   return `
     <h2>인식 결과 확인</h2>
-    <p class="small muted">체크된 품목만 재고조사에 적용됩니다. 값이 틀리면 고친 뒤 적용하세요.</p>
+    <p class="small muted">체크된 품목만 재고조사에 적용됩니다. 값이 틀리면 고친 뒤 적용하세요. 비워 두면 그 품목은 건너뜁니다.</p>
     <div id="photo-results">
       ${
         matched.length === 0
@@ -65,19 +73,26 @@ function resultHtml(s, app) {
                 const it = s.items.find((x) => x.id === m.itemId);
                 const conf = m.confidence === 'high' ? 'ok' : m.confidence === 'low' ? 'danger' : 'warn';
                 const cur = sess.counts[m.itemId];
+                const ok = convertible(m, it);
+                const checked = ok && m.confidence !== 'low';
                 return `<div class="check-row">
-                  <input type="checkbox" data-idx="${i}" ${m.confidence === 'low' ? '' : 'checked'} aria-label="${esc(it?.name)} 적용" />
+                  <input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} ${ok ? '' : 'disabled'} aria-label="${esc(it?.name)} 적용" />
                   <div>
                     <div style="font-weight:600">${esc(it?.name)} <span class="pill ${conf}">${m.confidence === 'high' ? '확실' : m.confidence === 'low' ? '불확실' : '보통'}</span></div>
                     <div class="tiny muted">인식: "${esc(m.recognizedName)}" ${m.unit === 'box' ? '(박스)' : ''}${m.note ? ` · ${esc(m.note)}` : ''}${cur != null ? ` · 현재 입력값 ${cur}` : ''}</div>
+                    ${ok ? '' : `<div class="tiny" style="color:var(--warn)">1박스 개수가 등록되지 않아 ${m.unit === 'box' ? '박스를 개수로' : '개수를 박스로'} 바꿀 수 없습니다. 품목 탭에서 1박스 개수를 입력하세요.</div>`}
                   </div>
-                  <div class="row" style="gap:4px"><input type="number" min="0" inputmode="numeric" data-idx="${i}" value="${m.count}" aria-label="수량" /><span class="tiny">${m.unit === 'box' ? '박스' : '개'}</span></div>
+                  <div class="row" style="gap:4px"><input type="number" min="0" inputmode="numeric" data-idx="${i}" value="${m.count}" aria-label="수량" ${ok ? '' : 'disabled'} /><span class="tiny">${m.unit === 'box' ? '박스' : '개'}</span></div>
                 </div>`;
               })
               .join('')
       }
     </div>
-    ${unmatched.length ? `<p class="small mt"><b>매칭 안 됨:</b> <span class="muted">${unmatched.map((u) => `${esc(u.name)} ${u.count}`).join(', ')}</span><br/><span class="tiny muted">품목 탭에서 별칭을 추가하면 다음부터 자동 매칭됩니다.</span></p>` : ''}
+    ${
+      unmatched.length
+        ? `<p class="small mt"><b>매칭 안 됨:</b> <span class="muted">${unmatched.map((u) => `${esc(u.name)} ${u.count}${u.reason ? ` (${esc(u.reason)})` : ''}`).join(', ')}</span><br/><span class="tiny muted">품목 탭에서 별칭을 추가하면 다음부터 자동 매칭됩니다.</span></p>`
+        : ''
+    }
     ${unreadable?.length ? `<p class="small mt"><b>읽지 못함:</b> <span class="muted">${unreadable.map(esc).join(', ')}</span></p>` : ''}
     ${ui.result.usage ? `<p class="tiny muted">모델 ${esc(ui.result.model || '')} · 입력 ${ui.result.usage.input_tokens} / 출력 ${ui.result.usage.output_tokens} 토큰</p>` : ''}
     <div class="modal-actions">
@@ -90,6 +105,13 @@ function rerender(app) {
   const modal = app.modal?.querySelector('.modal');
   if (!modal) return;
   modal.innerHTML = ui.result ? resultHtml(app.state, app) : stepHtml(app.state);
+}
+
+/** 인식 프롬프트에 넘길 품목 목록 — 그룹 이름을 붙여 같은 이름끼리 구분 */
+function promptItems(s) {
+  return s.items
+    .filter((it) => it.active !== false)
+    .map((it) => ({ ...it, groupTitle: s.groups.find((g) => g.id === it.group)?.title || '' }));
 }
 
 export const changes = {
@@ -119,7 +141,7 @@ export const actions = {
     ui.result = null;
     ui.error = null;
     ui.busy = false;
-    app.openModal(stepHtml(app.state));
+    app.openModal(stepHtml(app.state), null, () => ui.abort?.abort());
     if (ui.sample === undefined) {
       ui.sample = null; // 확인 중 중복 호출 방지
       ui.sample = await detectSample();
@@ -136,20 +158,17 @@ export const actions = {
   },
   async 'photo-run'(el, e, app) {
     const s = app.state;
-    const modeSel = document.getElementById('photo-mode');
-    const mode = modeSel?.value || s.settings.photoMode || 'sheet';
-    app.set((st) => {
-      st.settings.photoMode = mode;
-    });
+    const mode = s.settings.photoMode === 'shelf' ? 'shelf' : 'sheet';
     ui.busy = true;
     ui.error = null;
-    ui.abort = new AbortController();
+    const ctl = new AbortController();
+    ui.abort = ctl;
     rerender(app);
     try {
-      const items = s.items.filter((it) => it.active !== false);
+      const items = promptItems(s);
       const res = ui.sample
-        ? await extractWithSample(ui.sample.sample, { mode, items, files: ui.images.map((im) => im.file), signal: ui.abort.signal })
-        : await extractCounts({ apiKey: s.settings.apiKey, mode, items, images: ui.images });
+        ? await extractWithSample(ui.sample.sample, { mode, items, files: ui.images.map((im) => im.file), signal: ctl.signal })
+        : await extractCounts({ apiKey: s.settings.apiKey, mode, items, images: ui.images, signal: ctl.signal });
       const { matched, unmatched } = matchRecognized(res.items, items);
       // 인식 결과의 confidence/unit/note를 매칭 결과에 붙인다
       for (const m of matched) {
@@ -161,9 +180,10 @@ export const actions = {
       ui.error = err?.message || String(err);
     } finally {
       ui.busy = false;
-      ui.abort = null;
+      if (ui.abort === ctl) ui.abort = null;
     }
-    rerender(app);
+    // 인식 중에 모달이 닫혔으면 결과를 버린다
+    if (app.modal) rerender(app);
   },
   'photo-back'(el, e, app) {
     ui.result = null;
@@ -178,18 +198,22 @@ export const actions = {
     app.update((s) => {
       const sess = app.activeSession();
       for (const c of checks) {
-        if (!c.checked) continue;
+        if (!c.checked || c.disabled) continue;
         const i = Number(c.dataset.idx);
         const m = ui.result.matched[i];
         const it = s.items.find((x) => x.id === m.itemId);
-        if (!it) continue;
-        const raw = Number(nums.find((n) => Number(n.dataset.idx) === i)?.value ?? m.count);
+        if (!it || !convertible(m, it)) continue;
+        const field = nums.find((n) => Number(n.dataset.idx) === i);
+        const str = field ? field.value.trim() : String(m.count);
+        if (str === '') continue; // 비워 둔 항목은 건너뜀
+        const raw = Number(str);
         if (!Number.isFinite(raw)) continue;
         // 인식 단위(box/ea) → 품목의 세는 단위로 환산
         let v = raw;
         if (m.unit === 'box' && it.countUnit !== 'box') v = toEach(it, raw, 'box');
-        else if (m.unit === 'ea' && it.countUnit === 'box' && it.boxSize) v = raw / it.boxSize;
+        else if (m.unit === 'ea' && it.countUnit === 'box') v = raw / it.boxSize;
         sess.counts[m.itemId] = Math.max(0, Math.round(v));
+        if (sess.overrides) delete sess.overrides[m.itemId];
         applied++;
       }
       sess.updatedAt = new Date().toISOString();

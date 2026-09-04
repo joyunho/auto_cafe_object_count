@@ -8,6 +8,8 @@ import {
   sanitizeParsed,
   extractWithClient,
   extractWithSample,
+  extractCounts,
+  describeSdkError,
   MODEL,
   OUTPUT_SCHEMA,
 } from '../src/ai/extract.js';
@@ -34,9 +36,10 @@ test('buildRequest: 이미지 블록 다음에 텍스트, 구조화 출력, fall
   assert.ok(req.max_tokens >= 4096);
 });
 
-test('buildUserText: 품목 목록과 박스 정보, 모드별 지시 포함', () => {
+test('buildUserText: 품목 목록과 박스 정보, 그룹, 모드별 지시 포함', () => {
   const sheet = buildUserText('sheet', items);
   assert.match(sheet, /아이스티\(1box>6\) \(1박스=6개; 별칭: 아이스티\)/);
+  assert.match(buildUserText('sheet', [{ name: '레몬(주스)', groupTitle: '주스 · 생수' }]), /- 레몬\(주스\) \[주스 · 생수\]/);
   assert.match(sheet, /손으로 쓴 값만/);
   const shelf = buildUserText('shelf', items);
   assert.match(shelf, /실물 재고 사진/);
@@ -61,8 +64,53 @@ test('parseResponse: JSON 텍스트를 정리해서 돌려준다', () => {
   assert.equal(out.model, 'claude-opus-5');
 });
 
-test('parseResponse: max_tokens로 잘리면 오류', () => {
+test('parseResponse: max_tokens로 잘리면 (JSON이 깨졌어도) 잘림 오류', () => {
   assert.throws(() => parseResponse({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"items":[]}' }] }), /잘렸/);
+  assert.throws(() => parseResponse({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"items":[{"na' }] }), /잘렸/);
+});
+
+test('extractCounts: signal을 SDK 호출에 넘기고 SDK 오류를 한국어로 바꾼다', async () => {
+  class APIError extends Error {
+    constructor(status) {
+      super('401 {"type":"error"}');
+      this.status = status;
+    }
+  }
+  class AuthenticationError extends APIError {}
+  class APIUserAbortError extends Error {}
+  let captured;
+  let mode = 'ok';
+  class FakeAnthropic {
+    static APIError = APIError;
+    static AuthenticationError = AuthenticationError;
+    static APIUserAbortError = APIUserAbortError;
+    constructor(opts) {
+      this.opts = opts;
+      this.beta = {
+        messages: {
+          async create(req, options) {
+            captured = { req, options };
+            if (mode === 'auth') throw new AuthenticationError(401);
+            if (mode === 'abort') throw new APIUserAbortError('aborted');
+            if (mode === 'other') throw new APIError(500);
+            return { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"items":[],"unreadable":[]}' }] };
+          },
+        },
+      };
+    }
+  }
+  const ctl = new AbortController();
+  const out = await extractCounts({ apiKey: 'k', mode: 'sheet', items, images, signal: ctl.signal, AnthropicClass: FakeAnthropic });
+  assert.equal(captured.options.signal, ctl.signal);
+  assert.deepEqual(out.items, []);
+  mode = 'auth';
+  await assert.rejects(() => extractCounts({ apiKey: 'k', mode: 'sheet', items, images, AnthropicClass: FakeAnthropic }), /API 키가 올바르지 않습니다/);
+  mode = 'abort';
+  await assert.rejects(() => extractCounts({ apiKey: 'k', mode: 'sheet', items, images, AnthropicClass: FakeAnthropic }), /취소/);
+  mode = 'other';
+  await assert.rejects(() => extractCounts({ apiKey: 'k', mode: 'sheet', items, images, AnthropicClass: FakeAnthropic }), /API 오류 \(500\)/);
+  assert.equal(describeSdkError(new Error('x'), FakeAnthropic), null);
+  await assert.rejects(() => extractCounts({ apiKey: '', mode: 'sheet', items, images, AnthropicClass: FakeAnthropic }), /API 키가 설정되지/);
 });
 
 test('sanitizeParsed: 이상한 값을 걸러낸다', () => {

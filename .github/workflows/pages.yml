@@ -28,6 +28,9 @@ jobs:
         run: |
           mkdir -p dist
           cp -r index.html manifest.webmanifest sw.js src icons dist/
+          # 배포마다 서비스 워커 버전을 바꿔 새 캐시가 설치되게 한다
+          sed -i "s/const VERSION = '[^']*';/const VERSION = '${GITHUB_SHA::8}';/" dist/sw.js
+          grep -q "${GITHUB_SHA::8}" dist/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

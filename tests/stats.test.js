@@ -60,6 +60,25 @@ test('suggestPar: 충분한 표본이면 제안, 기준과 비슷하면 null', (
   assert.equal(suggestPar({ ...item, par: 17 }, stat), null);
 });
 
+test('suggestPar: 소비가 없어도 기준 0을 제안하지 않고, 재발주점 품목은 제안하지 않는다', () => {
+  assert.equal(suggestPar(item, { samples: 5, avgPerDay: 0 }), null);
+  assert.equal(suggestPar(item, { samples: 5, avgPerDay: 0.1 }).suggested, 1); // 0.4×1.5 → 1 (0이 아니면 제안)
+  const rule = { ...item, rule: { type: 'reorderPoint', threshold: 3, orderQty: 1 } };
+  assert.equal(suggestPar(rule, { samples: 5, avgPerDay: 3 }), null);
+});
+
+test('consumptionStats: 박스 단위로 세는 품목은 낱개로 환산해 계산', () => {
+  const box = { id: 'x', name: '아이스티', par: 6, parUnit: 'ea', boxSize: 6, orderUnit: 'box', countUnit: 'box' };
+  const s = [
+    { id: '1', date: '2026-09-01', status: 'submitted', counts: { x: 2 } }, // 12개
+    { id: '2', date: '2026-09-04', status: 'submitted', counts: { x: 1 } }, // 6개 → 3일간 6개 사용
+  ];
+  const st = consumptionStats([box], s, []);
+  assert.equal(st.x.samples, 1);
+  assert.ok(Math.abs(st.x.avgPerDay - 2) < 1e-9);
+  assert.equal(st.x.lastCount, 6);
+});
+
 test('stockoutCount: 최근 조사 중 0인 횟수', () => {
   const s = [
     { id: '1', date: '2026-09-01', status: 'submitted', counts: { a: 0 } },

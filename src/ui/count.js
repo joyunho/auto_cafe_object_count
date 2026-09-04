@@ -1,6 +1,6 @@
 // 재고조사 탭
 import { esc, fmtDateKo } from './html.js';
-import { parInEach, unitLabel } from '../logic/order.js';
+import { parInCountUnit, unitLabel, unitsUnresolved, formatDate } from '../logic/order.js';
 
 function activeItems(s) {
   return s.items.filter((it) => it.active !== false);
@@ -17,14 +17,16 @@ function itemMeta(it) {
   if (it.par != null) parts.push(`기준 <span class="par">${it.par}</span>${it.parUnit === 'box' ? '박스' : '개'}`);
   else parts.push('기준 없음');
   if (it.boxSize) parts.push(`1박스=${it.boxSize}개`);
-  if (it.rule?.type === 'reorderPoint') parts.push(`${it.rule.threshold}개 미만 시 ${it.rule.orderQty}${unitLabel(it.orderUnit)}`);
-  if (it.countUnit === 'box') parts.push('박스 단위로 세기');
+  if (it.rule?.type === 'reorderPoint') parts.push(`${it.rule.threshold}개 미만이면 ${it.rule.orderQty}${unitLabel(it.orderUnit)} 발주`);
+  if (it.countUnit === 'box') parts.push('<b>박스 단위로 세기</b>');
+  if (unitsUnresolved(it)) parts.push('<span style="color:var(--warn)">1박스 개수 미설정 — 품목 탭에서 입력</span>');
   return parts.join(' · ');
 }
 
 function rowHtml(it, val) {
   const has = val != null;
-  const parEach = parInEach(it);
+  const parCount = parInCountUnit(it);
+  const unit = it.countUnit === 'box' ? '박스' : '';
   return `
     <div class="item-row ${has ? 'done' : ''}" data-row="${esc(it.id)}">
       <div>
@@ -35,12 +37,12 @@ function rowHtml(it, val) {
         <div class="stepper" role="group" aria-label="${esc(it.name)} 수량">
           <button type="button" data-action="count-dec" data-id="${esc(it.id)}" aria-label="1 빼기">−</button>
           <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-input="count" data-id="${esc(it.id)}"
-            value="${has ? val : ''}" placeholder="–" class="${has ? '' : 'empty'}" aria-label="${esc(it.name)} 현재 수량" />
+            value="${has ? val : ''}" placeholder="–" class="${has ? '' : 'empty'}" aria-label="${esc(it.name)} 현재 수량${unit ? ' (박스)' : ''}" />
           <button type="button" data-action="count-inc" data-id="${esc(it.id)}" aria-label="1 더하기">+</button>
         </div>
         <div class="quick">
           <button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="0">0</button>
-          ${parEach != null ? `<button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="${parEach}">기준(${parEach})</button>` : ''}
+          ${parCount != null ? `<button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="${parCount}">기준(${parCount}${unit})</button>` : ''}
           <button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="" title="입력 지우기">지움</button>
         </div>
       </div>
@@ -55,6 +57,7 @@ export function render(s, app) {
     .map((g) => ({ g, items: activeItems(s).filter((it) => it.group === g.id) }))
     .filter((x) => x.items.length);
   const ungrouped = activeItems(s).filter((it) => !s.groups.some((g) => g.id === it.group));
+  const stale = sess.date < formatDate(new Date());
 
   return `
     <section class="card">
@@ -65,6 +68,7 @@ export function render(s, app) {
         </div>
         <input type="date" value="${esc(sess.date)}" data-change="session-date" aria-label="발주일" style="min-height:40px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surface)" />
       </div>
+      ${stale ? `<p class="small mt" style="color:var(--warn);margin-bottom:0">지난 발주일(${esc(sess.date)})로 진행 중입니다. 날짜를 확인하세요.</p>` : ''}
       <div class="progress mt" aria-hidden="true"><div id="progress-bar" style="width:${pct}%"></div></div>
       <div class="row mt wrap">
         <button type="button" class="btn primary" data-action="photo-open">📷 사진으로 자동 입력</button>
@@ -94,7 +98,7 @@ export function render(s, app) {
     </div>`;
 }
 
-/** 값 갱신 + DOM 부분 갱신 (포커스 유지) */
+/** 값 갱신 + DOM 부분 갱신 (포커스 유지). 수량이 바뀌면 그 품목의 수동 발주 수정은 무효가 된다. */
 function setCount(app, id, val) {
   const s = app.state;
   const sess = app.activeSession();
@@ -104,6 +108,7 @@ function setCount(app, id, val) {
   app.set(() => {
     if (v == null) delete sess.counts[id];
     else sess.counts[id] = v;
+    if (sess.overrides) delete sess.overrides[id];
     sess.updatedAt = new Date().toISOString();
   });
   const row = document.querySelector(`[data-row="${CSS.escape(id)}"]`);
@@ -136,7 +141,7 @@ export const inputs = {
 export const changes = {
   'session-date'(el, e, app) {
     if (!el.value) return;
-    app.update((s) => {
+    app.update(() => {
       const sess = app.activeSession();
       sess.date = el.value;
     });
@@ -158,17 +163,22 @@ export const actions = {
     setCount(app, el.dataset.id, el.dataset.val === '' ? null : Number(el.dataset.val));
   },
   'count-fill-par'(el, e, app) {
+    let n = 0;
     app.update((s) => {
       const sess = app.activeSession();
       for (const it of activeItems(s)) {
         if (sess.counts[it.id] == null) {
-          const p = parInEach(it);
-          if (p != null) sess.counts[it.id] = p;
+          const p = parInCountUnit(it);
+          if (p != null) {
+            sess.counts[it.id] = p;
+            if (sess.overrides) delete sess.overrides[it.id];
+            n++;
+          }
         }
       }
       sess.updatedAt = new Date().toISOString();
     });
-    app.toast('입력하지 않은 품목을 기준 수량으로 채웠습니다');
+    app.toast(n ? `입력하지 않은 ${n}개 품목을 기준 수량으로 채웠습니다` : '채울 품목이 없습니다');
   },
   'count-clear'(el, e, app) {
     if (!confirm('입력한 수량을 모두 지울까요?')) return;

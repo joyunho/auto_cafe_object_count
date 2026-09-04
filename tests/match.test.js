@@ -46,6 +46,24 @@ test('matchItem: 임계값 미만이면 null', () => {
   assert.equal(matchItem('완전다른것', items), null);
 });
 
+test('matchItem: 서로 다른 품목이 같은 점수로 겹치면 ambiguous', () => {
+  const dup = [
+    { id: 'lemon-juice', name: '레몬(주스)' },
+    { id: 'lemon-syrup', name: '레몬(시럽)' },
+    { id: 'yuja', name: '유자청' },
+  ];
+  const m = matchItem('레몬', dup);
+  assert.equal(m.ambiguous, true);
+  assert.equal(m.candidates.length, 2);
+  assert.equal(matchItem('레몬(시럽)', dup).item.id, 'lemon-syrup');
+  assert.equal(matchItem('레몬(시럽)', dup).ambiguous, undefined);
+  const { matched, unmatched } = matchRecognized([{ name: '레몬', count: 2 }, { name: '레몬 (주스)', count: 1 }], dup);
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].itemId, 'lemon-juice');
+  assert.equal(unmatched.length, 1);
+  assert.match(unmatched[0].reason, /후보 여러 개/);
+});
+
 test('matchRecognized: 중복 인식 시 점수 높은 것 채택, 나머지 unmatched', () => {
   const rec = [
     { name: '유자청', count: 2 },

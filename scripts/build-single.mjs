@@ -33,7 +33,7 @@ const inner = `<title>씨앤비 발주 도우미</title>
 <style>
 ${css}
 </style>
-<div id="app" aria-live="polite"></div>
+<div id="app"></div>
 <noscript>이 앱은 JavaScript가 필요합니다.</noscript>
 <script type="module">
 ${js}

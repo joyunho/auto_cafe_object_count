@@ -103,6 +103,7 @@ try {
   assert.doesNotMatch(orderText, /카페시럽/, '카페시럽은 기준과 같아 발주 없음');
   assert.match(orderText, /총 4개 품목/);
   assert.equal(await page.locator('.tabbar [data-tab="order"] .badge').textContent(), '4');
+  assert.match(await page.locator('main').textContent(), /기준 없음 \d+/, '기준 없는 품목 안내');
   await shot(page, 'order');
   log('발주 수량 자동 계산 (낱개/박스/재발주점 규칙)');
 
@@ -116,6 +117,19 @@ try {
   await page.waitForFunction(() => document.querySelector('#order-text')?.textContent.includes('탄산수 5개'));
   log('발주 수량 수동 수정과 되돌리기');
 
+  // 5b. 박스 단위로 세는 품목(배도라지차 2BOX): 1박스 남음 → 1박스 발주
+  await page.locator('.tabbar [data-tab="count"]').click();
+  await count('pear-bellflower-tea').fill('1');
+  // 재고조사에서 수량을 고치면 직접 수정한 발주 수량(탄산수 6)은 무효
+  await count('sparkling-water').fill('4');
+  await page.locator('.tabbar [data-tab="order"]').click();
+  await page.waitForSelector('#order-text');
+  const orderText2 = await page.locator('#order-text').textContent();
+  assert.match(orderText2, /- 배도라지차 1박스/, '배도라지차 기준 2박스 − 현재 1박스');
+  assert.match(orderText2, /- 탄산수 4개/, '재입력 후 자동 계산(8−4)으로 복귀');
+  assert.equal(await page.locator('.order-line.overridden').count(), 0);
+  log('박스 단위 품목 계산 · 재입력 시 수동 수정 해제');
+
   // 6. 복사
   await page.locator('[data-action="order-copy"]').click();
   const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -126,7 +140,7 @@ try {
   await page.locator('[data-action="order-submit"]').click();
   await page.waitForSelector('main[data-tab="history"]');
   assert.match(await page.locator('main').textContent(), /발주가 기록되었습니다/);
-  assert.match(await page.locator('main').textContent(), /발주 4품목/);
+  assert.match(await page.locator('main').textContent(), /발주 5품목/);
   await page.locator('details summary').first().click();
   await shot(page, 'history');
   const st1 = await state();
@@ -146,7 +160,8 @@ try {
   await page.locator('details summary').first().click(); // 접힌 기록 펼치기
   await page.locator('[data-action="history-reuse"]').first().click();
   await page.waitForSelector('main[data-tab="count"]');
-  assert.equal(await count('sparkling-water').inputValue(), '3');
+  assert.equal(await count('sparkling-water').inputValue(), '4');
+  assert.equal(await count('pear-bellflower-tea').inputValue(), '1');
   log('지난 수량으로 새 조사 시작');
 
   // 10. 품목 편집
@@ -197,13 +212,22 @@ try {
   const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
   assert.equal(backup.orders.length, 1);
   assert.equal(backup.settings.storeName, '테스트점');
+  assert.ok(!('apiKey' in backup.settings), '백업에 API 키가 없어야 함');
   // 초기화 후 복원
   await page.locator('[data-action="data-wipe"]').click();
   await page.waitForFunction(() => window.__cafeApp.state.orders.length === 0);
+  // 백업이 아닌 파일은 거부
+  const junkPath = path.join(OUT, 'junk.json');
+  fs.writeFileSync(junkPath, '{"foo":"bar"}');
+  await page.locator('input[data-change="backup-import"]').setInputFiles(junkPath);
+  await page.waitForSelector('.toast');
+  assert.match(await page.locator('.toast').textContent(), /백업 파일이 아니거나/);
+  assert.equal((await state()).orders.length, 0);
   await page.locator('input[data-change="backup-import"]').setInputFiles(backupPath);
   await page.waitForFunction(() => window.__cafeApp.state.orders.length === 1);
   assert.equal((await state()).settings.storeName, '테스트점');
-  log('백업 내보내기 · 초기화 · 불러오기');
+  assert.ok(await page.locator('[data-action="backup-undo"]').count() === 1, '되돌리기 버튼 표시');
+  log('백업 내보내기 · 초기화 · 잘못된 파일 거부 · 불러오기');
 
   // 14. 다크 모드 · 데스크톱
   await page.emulateMedia({ colorScheme: 'dark' });

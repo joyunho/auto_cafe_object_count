@@ -22,7 +22,7 @@ export function render(s, app) {
     .slice(0, 10);
 
   return `
-    ${s.ui.lastOrderId ? `<div class="card" style="border-left:4px solid var(--ok)"><b>발주가 기록되었습니다.</b> <span class="small muted">발주 문자는 클립보드에 복사되었습니다. 아래 목록에서 다시 복사할 수 있습니다.</span> <button type="button" class="btn sm ghost" data-action="history-dismiss">닫기</button></div>` : ''}
+    ${s.ui.lastOrderId ? `<div class="card" style="border-left:4px solid var(--ok)"><b>발주가 기록되었습니다.</b> <span class="small muted">아래 목록에서 발주 문자를 복사해 거래처에 보내세요.</span> <button type="button" class="btn sm ghost" data-action="history-dismiss">닫기</button></div>` : ''}
 
     <section class="card">
       <h2>인사이트</h2>

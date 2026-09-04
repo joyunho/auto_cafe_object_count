@@ -97,9 +97,10 @@ function formHtml(s, it, isNew) {
       <div class="field">
         <label class="row"><input type="checkbox" name="useRule" ${rule ? 'checked' : ''} /> 재발주점 규칙 사용 (예: 유자청 — 3개 미만이면 1박스)</label>
         <div class="grid-2">
-          <input type="number" name="threshold" min="0" inputmode="numeric" placeholder="기준 미만 (예: 3)" value="${rule?.threshold ?? ''}" style="border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px;background:var(--surface)" />
-          <input type="number" name="orderQty" min="1" inputmode="numeric" placeholder="발주 수량 (예: 1)" value="${rule?.orderQty ?? ''}" style="border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px;background:var(--surface)" />
+          <input type="number" name="threshold" min="0" inputmode="numeric" placeholder="재발주점 — 이 개수 미만이면 (예: 3)" aria-label="재발주점" value="${rule?.threshold ?? ''}" style="border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px;background:var(--surface)" />
+          <input type="number" name="orderQty" min="1" inputmode="numeric" placeholder="그때 발주 수량 (예: 1)" aria-label="재발주 수량" value="${rule?.orderQty ?? ''}" style="border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px;background:var(--surface)" />
         </div>
+        <div class="hint">기준 수량과는 별개입니다. 규칙이 켜지면 기준 수량 대신 이 규칙으로 발주량을 정합니다.</div>
       </div>
       <div class="field"><label>별칭 (쉼표로 구분 · 사진 인식 매칭용)</label><input type="text" name="aliases" value="${esc((it.aliases || []).join(', '))}" /></div>
       <div class="field"><label>메모</label><input type="text" name="note" value="${esc(it.note || '')}" /></div>
@@ -147,6 +148,17 @@ function openForm(app, it, isNew) {
       e.preventDefault();
       const data = readForm(form);
       if (!data.name) return;
+      const units = new Set([data.parUnit, data.orderUnit, data.countUnit]);
+      if (units.size > 1 && !data.boxSize) {
+        app.toast('기준·세는·발주 단위가 다르면 "1박스 개수"를 입력해야 계산할 수 있습니다', 3500);
+        form.querySelector('input[name=boxSize]').focus();
+        return;
+      }
+      if (app.state.items.some((x) => x.id !== it.id && x.name === data.name)) {
+        app.toast('같은 이름의 품목이 이미 있습니다. 이름을 구분해 주세요', 3000);
+        form.querySelector('input[name=name]').focus();
+        return;
+      }
       app.update((s) => {
         if (isNew) {
           let id = slugify(data.name);

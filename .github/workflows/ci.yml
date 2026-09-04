@@ -19,6 +19,8 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       - name: Unit tests
         run: npm test
+      - name: Single-file build
+        run: npm run build
       - name: Install Chromium for browser smoke test
         run: npx --yes playwright@1.56.1 install --with-deps chromium
       - name: Browser smoke test

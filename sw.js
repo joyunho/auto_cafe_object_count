@@ -1,6 +1,8 @@
-// 오프라인용 서비스 워커: 앱 셸은 캐시 우선, 그 외는 네트워크 우선
-const VERSION = 'v0.1.0';
-const CACHE = `cafe-inventory-${VERSION}`;
+// 오프라인용 서비스 워커: 앱 셸은 캐시 우선, 백그라운드에서 갱신
+// VERSION은 배포(.github/workflows/pages.yml)할 때 커밋 해시로 바뀐다 → 배포마다 새 워커가 설치된다.
+const VERSION = 'dev';
+const CACHE_PREFIX = 'cafe-inventory-';
+const CACHE = `${CACHE_PREFIX}${VERSION}`;
 const SHELL = [
   './',
   './index.html',
@@ -36,7 +38,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // 이 앱의 옛 캐시만 지운다 (같은 origin의 다른 사이트 캐시는 건드리지 않음)
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

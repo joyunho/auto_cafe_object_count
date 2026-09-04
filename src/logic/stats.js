@@ -1,13 +1,14 @@
 // 재고 기록 기반 통계: 소비량 추정, 기준 수량 제안
 //
 // session: { id, date: 'YYYY-MM-DD', counts: {itemId: number|null}, status: 'submitted'|'draft' }
+//   counts 값은 각 품목의 countUnit 단위 — 여기서는 모두 낱개로 환산해 계산한다.
 // order  : { id, sessionId, date, lines: [{itemId, qty, unit}] }
 //
 // 소비량 추정 원리:
 //   연속된 두 재고조사 사이의 소비량 ≈ (이전 재고 + 그 사이 입고량) − 이번 재고
 //   입고량은 이전 조사 직후 확정된 발주(낱개 환산)로 근사한다.
 
-import { toEach } from './order.js';
+import { toEach, countToEach } from './order.js';
 
 /** 날짜 문자열 → 일수 (정수) */
 export function dayNumber(dateStr) {
@@ -16,7 +17,7 @@ export function dayNumber(dateStr) {
 }
 
 /**
- * 품목별 소비 통계.
+ * 품목별 소비 통계 (낱개 기준).
  * @returns {Record<itemId, {samples:number, avgPerDay:number|null, avgPerPeriod:number|null, lastCount:number|null, lastDate:string|null}>}
  */
 export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } = {}) {
@@ -25,12 +26,6 @@ export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } =
     .slice()
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  const ordersBySession = new Map();
-  for (const o of orders) {
-    if (!ordersBySession.has(o.sessionId)) ordersBySession.set(o.sessionId, []);
-    ordersBySession.get(o.sessionId).push(o);
-  }
-
   const result = {};
   for (const item of items) {
     const usages = []; // {days, used}
@@ -38,8 +33,9 @@ export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } =
     let lastDate = null;
     for (let i = 0; i < submitted.length; i++) {
       const s = submitted[i];
-      const c = s.counts?.[item.id];
-      if (c == null) continue;
+      const raw = s.counts?.[item.id];
+      if (raw == null) continue;
+      const c = countToEach(item, raw);
       lastCount = c;
       lastDate = s.date;
       if (i === 0) continue;
@@ -58,12 +54,12 @@ export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } =
       let received = 0;
       for (const o of orders) {
         if (o.date >= prev.date && o.date < s.date) {
-          for (const l of o.lines) {
+          for (const l of o.lines || []) {
             if (l.itemId === item.id) received += toEach(item, l.qty, l.unit);
           }
         }
       }
-      const used = prev.counts[item.id] + received - c;
+      const used = countToEach(item, prev.counts[item.id]) + received - c;
       if (used < 0) continue; // 발주 외 입고 등 — 신뢰 불가, 제외
       usages.push({ days, used });
     }
@@ -86,13 +82,17 @@ export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } =
 }
 
 /**
- * 기준 수량 제안: 한 발주 주기(월→목 3일, 목→월 4일) 소비량 + 안전재고.
- * 표본이 3회 미만이면 제안하지 않는다.
+ * 기준 수량 제안(낱개): 한 발주 주기(월→목 3일, 목→월 4일) 소비량 + 안전재고.
+ * - 표본이 3회 미만이면 제안하지 않는다.
+ * - 재발주점 규칙 품목은 기준이 발주량에 영향을 주지 않으므로 제안하지 않는다.
+ * - 소비가 거의 없어 제안값이 1 미만이면 제안하지 않는다(기준 0은 발주를 끊어 버린다).
  */
 export function suggestPar(item, stat, { periodDays = 4, safetyFactor = 1.5, minSamples = 3 } = {}) {
   if (!stat || stat.samples < minSamples || stat.avgPerDay == null) return null;
+  if (item.rule && item.rule.type === 'reorderPoint') return null;
   const perPeriod = stat.avgPerDay * periodDays;
   const suggested = Math.ceil(perPeriod * safetyFactor);
+  if (suggested < 1) return null;
   const currentPar = item.par == null ? null : toEach(item, item.par, item.parUnit || 'ea');
   if (currentPar != null && Math.abs(suggested - currentPar) <= Math.max(1, currentPar * 0.2)) return null;
   return { suggested, currentPar, perPeriod: Math.round(perPeriod * 10) / 10 };

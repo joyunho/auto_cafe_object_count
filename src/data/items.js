@@ -3,11 +3,13 @@
 // 필드 설명은 src/logic/order.js 상단 참고.
 //   par       : 시트의 빨간 인쇄 숫자(기준 수량). 흰 스티커로 덮어 쓴 값이 있으면 스티커 값.
 //   boxSize   : "(1box>6)" 표기 → 6
-//   rule      : 시트 각주 "유자, 청귤 최소발주 6단지 / 3개 미만일 때 1박스씩" → 재발주점 규칙
+//   rule      : 시트 각주 "* 유자, 청귤 최소발주 6○○ / 3개 미만일 때 1 BOX씩" → 재발주점 규칙
 //   note      : 원본 시트와 다르게 옮긴 부분 등 메모
 //
 // ※ 시트 1의 "레몬"(주스 칸)과 시트 2의 "레몬"(시럽 칸)은 이름이 같아 구분을 위해
 //    "레몬(주스)" / "레몬(시럽)"으로 등록했습니다. 실제 품목이 다르면 품목 탭에서 이름을 고치세요.
+//    (두 품목에 같은 별칭 "레몬"을 주면 사진 인식 결과를 어느 쪽에도 배정할 수 없어 별칭은 두지 않았습니다.)
+// ※ 그룹은 시트에 없는 앱의 분류입니다. 시트 칸 순서와 조금 다를 수 있습니다.
 
 export const SEED_GROUPS = [
   { id: 'cheong', title: '과일청 · 아이스크림', sheet: 1 },
@@ -42,7 +44,7 @@ const cheongRule = {
   orderUnit: 'box',
   minOrder: 1,
   rule: { type: 'reorderPoint', threshold: 3, orderQty: 1 },
-  note: '최소발주 6개(1박스). 3개 미만일 때 1박스씩 발주',
+  note: '각주: 최소발주 6(단위는 시트 확인) / 3개 미만일 때 1박스씩',
 };
 
 export const SEED_ITEMS = [
@@ -57,7 +59,7 @@ export const SEED_ITEMS = [
   item('grape-juice', '착즙포도주스', 'juice', 10),
   item('kiwi', '키위', 'juice', 1),
   item('tomato', '토마토', 'juice', 1),
-  item('lemon-juice', '레몬(주스)', 'juice', 1, { aliases: ['레몬'], note: '원본 시트 표기: 레몬' }),
+  item('lemon-juice', '레몬(주스)', 'juice', 1, { note: '원본 시트 표기: 레몬 (시트 1 주스 칸)' }),
   item('noa-orange', '노아(오렌지)', 'juice', 1),
   item('noa-carrot', '노아(당근)', 'juice', 1),
   item('noa-mango', '노아(망고)', 'juice', 1),
@@ -70,14 +72,14 @@ export const SEED_ITEMS = [
   item('beans', '원두 / 디카페인 원두', 'coffee', null, { aliases: ['원두', '디카페인 원두'] }),
   item('milk', '우유 / 요거트바이오', 'coffee', null, { aliases: ['우유', '요거트바이오'] }),
   item('condensed-milk', '연유', 'coffee', null),
+  item('decaf-coldbrew', '디카페인콜드브루', 'coffee', 8),
 
   // ── 시트 2: 탄산 · 시럽 · 소스 ──────────────────────────
   item('sparkling-water', '탄산수', 'syrup', 8),
   item('vanilla-syrup', '바닐라시럽(1box>6)', 'syrup', 8, { boxSize: 6, orderUnit: 'box', aliases: ['바닐라시럽'] }),
   item('grapefruit', '자몽', 'syrup', 6),
-  item('lemon-syrup', '레몬(시럽)', 'syrup', 6, { aliases: ['레몬'], note: '원본 시트 표기: 레몬' }),
+  item('lemon-syrup', '레몬(시럽)', 'syrup', 6, { note: '원본 시트 표기: 레몬 (시트 2 시럽 칸)' }),
   item('green-grape', '청포도', 'syrup', 6),
-  item('decaf-coldbrew', '디카페인콜드브루', 'syrup', 8),
   item('cafe-syrup', '카페시럽(1box>6)', 'syrup', 8, { boxSize: 6, orderUnit: 'box', aliases: ['카페시럽'] }),
   item('hazelnut-syrup', '헤이즐넛 시럽', 'syrup', 3),
   item('caramel-sauce', '카라멜소스', 'syrup', 4),

@@ -48,24 +48,33 @@ export function similarity(a, b) {
 
 /**
  * 하나의 이름을 품목 목록에서 찾는다.
- * @returns {{item, score}|null}
+ * 서로 다른 품목이 같은 최고 점수로 겹치면(예: 두 "레몬") 임의로 고르지 않고
+ * ambiguous로 표시한다.
+ * @returns {{item, score, ambiguous?:boolean, candidates?:object[]}|null}
  */
 export function matchItem(name, items, { threshold = 0.6 } = {}) {
   let best = null;
+  let tied = [];
   for (const it of items) {
     const candidates = [it.name, ...(it.aliases || [])];
-    for (const c of candidates) {
-      const score = similarity(name, c);
-      if (!best || score > best.score) best = { item: it, score };
+    let itemScore = 0;
+    for (const c of candidates) itemScore = Math.max(itemScore, similarity(name, c));
+    if (!best || itemScore > best.score) {
+      best = { item: it, score: itemScore };
+      tied = [];
+    } else if (best && itemScore === best.score && itemScore > 0) {
+      tied.push(it);
     }
   }
-  if (best && best.score >= threshold) return best;
-  return null;
+  if (!best || best.score < threshold) return null;
+  if (tied.length) return { ...best, ambiguous: true, candidates: [best.item, ...tied] };
+  return best;
 }
 
 /**
- * 인식 결과 배열 [{name, count}] → { matched: [{itemId, name, recognizedName, count, score}], unmatched: [{name,count}] }
+ * 인식 결과 배열 [{name, count}] → { matched: [{itemId, name, recognizedName, count, score}], unmatched: [{name,count,reason?}] }
  * 같은 품목에 여러 인식이 몰리면 점수가 높은 것을 택한다.
+ * 후보가 여럿인 이름(ambiguous)은 unmatched에 후보 목록과 함께 넣는다.
  */
 export function matchRecognized(recognized, items, opts) {
   const byItem = new Map();
@@ -74,6 +83,10 @@ export function matchRecognized(recognized, items, opts) {
     const m = matchItem(r.name, items, opts);
     if (!m) {
       unmatched.push(r);
+      continue;
+    }
+    if (m.ambiguous) {
+      unmatched.push({ ...r, reason: `후보 여러 개: ${m.candidates.map((c) => c.name).join(', ')}` });
       continue;
     }
     const prev = byItem.get(m.item.id);

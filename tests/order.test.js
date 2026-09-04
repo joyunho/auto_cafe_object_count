@@ -8,6 +8,9 @@ import {
   nextOrderDate,
   formatDate,
   parInEach,
+  parInCountUnit,
+  countToEach,
+  unitsUnresolved,
 } from '../src/logic/order.js';
 
 const ea = (over = {}) => ({ id: 'a', name: '탄산수', par: 8, parUnit: 'ea', boxSize: null, orderUnit: 'ea', rule: null, minOrder: null, ...over });
@@ -56,12 +59,48 @@ test('박스 품목: 부족 낱개 수를 박스로 올림', () => {
   assert.equal(calcOrderLine(boxed(), 6).qty, 0);
 });
 
-test('par가 박스 단위인 품목 (배도라지차 2BOX)', () => {
-  const it = { id: 'p', name: '배도라지차', par: 2, parUnit: 'box', boxSize: 10, orderUnit: 'box' };
+test('par가 박스 단위, 세는 단위는 낱개 (boxSize 있음)', () => {
+  const it = { id: 'p', name: '배도라지차', par: 2, parUnit: 'box', boxSize: 10, orderUnit: 'box', countUnit: 'ea' };
   assert.equal(parInEach(it), 20);
   assert.equal(calcOrderLine(it, 10).qty, 1);
   assert.equal(calcOrderLine(it, 0).qty, 2);
   assert.equal(calcOrderLine(it, 20).qty, 0);
+});
+
+test('전부 박스 단위인 품목 (배도라지차 2BOX, boxSize 모름)', () => {
+  const it = { id: 'p', name: '배도라지차', par: 2, parUnit: 'box', boxSize: null, orderUnit: 'box', countUnit: 'box' };
+  assert.equal(unitsUnresolved(it), false);
+  assert.equal(calcOrderLine(it, 1).qty, 1); // 1박스 남음 → 1박스
+  assert.equal(calcOrderLine(it, 2).qty, 0);
+  assert.equal(calcOrderLine(it, 0).qty, 2);
+  assert.match(calcOrderLine(it, 1).reason, /현재 1박스/);
+  assert.equal(parInCountUnit(it), 2);
+});
+
+test('세는 단위가 박스이고 boxSize가 있으면 박스 수 × 개수로 환산', () => {
+  const it = { id: 't', name: '아이스티', par: 6, parUnit: 'ea', boxSize: 6, orderUnit: 'box', countUnit: 'box' };
+  assert.equal(countToEach(it, 1), 6);
+  assert.equal(parInCountUnit(it), 1);
+  const l = calcOrderLine(it, 1); // 1박스 = 6개 = 기준 → 충분
+  assert.equal(l.qty, 0);
+  assert.equal(l.current, 1);
+  assert.equal(l.currentEach, 6);
+  assert.equal(calcOrderLine(it, 0).qty, 1);
+  // 기준 8개, 1박스 보유 → 2개 부족 → 1박스
+  assert.equal(calcOrderLine({ ...it, par: 8 }, 1).qty, 1);
+});
+
+test('단위가 섞였는데 boxSize가 없으면 계산하지 않는다', () => {
+  const it = ea({ orderUnit: 'box', boxSize: null });
+  assert.equal(unitsUnresolved(it), true);
+  const l = calcOrderLine(it, 3);
+  assert.equal(l.auto, false);
+  assert.equal(l.qty, 0);
+  assert.equal(l.reason, '1박스 개수 미설정');
+  // 재발주점 규칙도 세는 단위가 박스면 낱개로 환산해서 비교
+  const y = yuja({ countUnit: 'box' });
+  assert.equal(calcOrderLine(y, 1).qty, 0); // 1박스 = 6개 ≥ 3
+  assert.equal(calcOrderLine(y, 0).qty, 1);
 });
 
 test('재발주점 규칙: 3개 미만이면 1박스, 아니면 0', () => {
@@ -78,10 +117,18 @@ test('최소 발주 수량 적용', () => {
   assert.equal(calcOrderLine(it, 8).qty, 0); // 부족 없으면 0
 });
 
-test('기준 수량 없는 품목은 auto=false', () => {
+test('기준 수량 없는 품목은 수량을 세었든 아니든 "기준 수량 없음"', () => {
   const l = calcOrderLine(ea({ par: null }), 3);
   assert.equal(l.auto, false);
   assert.equal(l.qty, 0);
+  assert.equal(l.reason, '기준 수량 없음');
+  assert.equal(l.current, 3);
+  const u = calcOrderLine(ea({ par: null }), null);
+  assert.equal(u.reason, '기준 수량 없음');
+  // 규칙이 있으면 기준이 없어도 계산된다
+  const r = calcOrderLine(yuja({ par: null }), 2);
+  assert.equal(r.qty, 1);
+  assert.equal(calcOrderLine(yuja({ par: null }), null).reason, '미입력');
 });
 
 test('calcOrder: 비활성 품목 제외, override 적용', () => {
