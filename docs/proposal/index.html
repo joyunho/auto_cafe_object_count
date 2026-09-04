@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>카페 재고관리 시스템 기획안</title>
+<style>
+  @font-face { font-family: 'Noto Sans KR'; font-weight: 400; src: url('fonts/NotoSansKR-400.ttf') format('truetype'); }
+  @font-face { font-family: 'Noto Sans KR'; font-weight: 500; src: url('fonts/NotoSansKR-500.ttf') format('truetype'); }
+  @font-face { font-family: 'Noto Sans KR'; font-weight: 700; src: url('fonts/NotoSansKR-700.ttf') format('truetype'); }
+
+  :root {
+    --ink: #17191c;
+    --muted: #5f666d;
+    --line: #d7dbdf;
+    --paper: #ffffff;
+    --tint: #f3f4f2;
+    --red: #c93a3a;      /* 시트의 빨간 기준 숫자 */
+    --red-soft: #fbe9e9;
+    --ok: #2e7d4f;
+    --ok-soft: #e3f1e8;
+    --warn: #a8690f;
+    --warn-soft: #fbeed2;
+  }
+  @page { size: A4; margin: 16mm 18mm 18mm 18mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink);
+    font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; line-height: 1.65;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1, h2, h3, h4 { line-height: 1.3; text-wrap: balance; margin: 0; }
+  h1 { font-size: 26pt; font-weight: 700; }
+  h2 { font-size: 16pt; font-weight: 700; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--ink); }
+  h2 .num { color: var(--red); margin-right: 3mm; font-variant-numeric: tabular-nums; }
+  h3 { font-size: 12pt; font-weight: 700; margin: 6mm 0 2mm; }
+  h4 { font-size: 10.5pt; font-weight: 700; margin: 4mm 0 1.5mm; }
+  p { margin: 0 0 2.5mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; }
+  li::marker { color: var(--muted); }
+  strong { font-weight: 700; }
+  .muted { color: var(--muted); }
+  .small { font-size: 9pt; }
+  .section { page-break-before: always; }
+  .avoid-break { page-break-inside: avoid; }
+  .eyebrow { font-size: 8.5pt; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+  /* 표지 */
+  .cover { height: 257mm; display: flex; flex-direction: column; justify-content: space-between; }
+  .cover .mark { width: 14mm; height: 14mm; border-radius: 3mm; background: var(--red); position: relative; }
+  .cover .mark::after { content: ''; position: absolute; inset: 4mm 3.5mm 3.5mm 3.5mm; border: 1.2mm solid #fff; border-radius: 0 0 2mm 2mm; border-top: 0; }
+  .cover h1 { font-size: 30pt; margin-top: 4mm; }
+  .cover .subtitle { font-size: 14pt; color: var(--muted); margin-top: 3mm; }
+  .cover .meta { display: grid; grid-template-columns: 28mm 1fr; row-gap: 1.5mm; font-size: 10pt; border-top: 1px solid var(--line); padding-top: 4mm; }
+  .cover .meta dt { color: var(--muted); }
+  .cover .meta dd { margin: 0; }
+  .cover .sheet { border: 1px solid var(--line); border-radius: 3mm; padding: 5mm 6mm; background: var(--tint); }
+  .cover .sheet .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; margin-top: 3mm; }
+  .cover .sheet .cell { background: #fff; border: 1px solid var(--line); border-radius: 2mm; padding: 2mm 3mm; display: flex; justify-content: space-between; align-items: baseline; }
+  .cover .sheet .cell .par { color: var(--red); font-weight: 700; font-size: 9pt; }
+  .cover .sheet .cell .hand { font-weight: 700; font-size: 13pt; }
+
+  /* 목차 */
+  .toc { columns: 2; column-gap: 10mm; }
+  .toc ol { list-style: none; padding: 0; margin: 0; }
+  .toc li { display: flex; gap: 3mm; padding: 1.2mm 0; border-bottom: 1px dotted var(--line); break-inside: avoid; }
+  .toc li .n { color: var(--red); font-weight: 700; min-width: 6mm; font-variant-numeric: tabular-nums; }
+
+  /* 표 */
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin: 2mm 0 4mm; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 2mm 2.5mm; border-bottom: 1px solid var(--line); }
+  th { font-size: 8.5pt; color: var(--muted); font-weight: 700; border-bottom: 1.5px solid var(--ink); background: var(--tint); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.lead { font-weight: 700; white-space: nowrap; }
+  table.compact th, table.compact td { padding: 1.4mm 2mm; }
+
+  /* 칠판 · 강조 */
+  .callout { border-left: 3px solid var(--red); background: var(--red-soft); padding: 3mm 4mm; border-radius: 0 2mm 2mm 0; margin: 3mm 0 4mm; page-break-inside: avoid; }
+  .callout.ok { border-color: var(--ok); background: var(--ok-soft); }
+  .callout.warn { border-color: var(--warn); background: var(--warn-soft); }
+  .callout .t { font-weight: 700; margin-bottom: 1mm; }
+  .pill { display: inline-block; border-radius: 99px; padding: 0 2.2mm; font-size: 8.5pt; font-weight: 700; background: var(--tint); color: var(--muted); vertical-align: 0.3mm; }
+  .pill.red { background: var(--red-soft); color: var(--red); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+
+  /* 요약 숫자 */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 3mm 0 5mm; }
+  .kpi { border: 1px solid var(--line); border-radius: 2.5mm; padding: 3mm 3.5mm; }
+  .kpi .v { font-size: 18pt; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi .l { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
+
+  /* 흐름 */
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2mm; margin: 3mm 0 4mm; page-break-inside: avoid; }
+  .flow .step { border: 1px solid var(--line); border-radius: 2.5mm; padding: 2.5mm 3mm; position: relative; background: #fff; font-size: 9pt; }
+  .flow .step .k { font-size: 8pt; color: var(--red); font-weight: 700; }
+  .flow .step .who { font-size: 8pt; color: var(--muted); margin-top: 1mm; }
+  .flow .step.auto { background: var(--tint); }
+
+  /* 화면 */
+  .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; margin: 3mm 0; page-break-inside: avoid; }
+  .shots figure { margin: 0; }
+  .shots img { width: 100%; height: 72mm; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 2.5mm; }
+  .shots figcaption { font-size: 8.5pt; color: var(--muted); margin-top: 1.5mm; }
+
+  /* 다이어그램 */
+  svg text { font-family: 'Noto Sans KR', sans-serif; }
+  .diagram { margin: 3mm 0 4mm; page-break-inside: avoid; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .decision { display: grid; grid-template-columns: 8mm 1fr; gap: 2mm; padding: 2.5mm 0; border-bottom: 1px solid var(--line); page-break-inside: avoid; }
+  .decision .n { width: 6mm; height: 6mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 9pt; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .decision .q { font-weight: 700; }
+  .decision .a { color: var(--muted); font-size: 9.5pt; }
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── 표지 ───────────────────────── -->
+<section class="cover">
+  <div>
+    <div class="mark"></div>
+    <div class="eyebrow" style="margin-top:8mm">기획안 · v0.2 초안</div>
+    <h1>카페 재고관리 시스템</h1>
+    <div class="subtitle">씨앤비 월·목 발주를 "세지 않고" 처리하기</div>
+    <p style="margin-top:8mm;max-width:130mm">코팅 시트와 매직으로 하던 재고조사를 휴대폰 웹앱으로 옮기고, 직원 모두가 같은 재고를 보며,
+    세는 대신 예상 재고를 확인만 하고 발주 문자를 보내는 체계를 제안합니다.</p>
+  </div>
+
+  <div class="sheet">
+    <div class="eyebrow">지금의 재고조사 시트 (일부)</div>
+    <div class="row">
+      <div class="cell"><span>유자청</span><span><span class="par">8</span> <span class="hand">1box</span></span></div>
+      <div class="cell"><span>청귤청</span><span><span class="par">8</span> <span class="hand">3</span></span></div>
+      <div class="cell"><span>딸기청</span><span><span class="par">8</span> <span class="hand">2</span></span></div>
+      <div class="cell"><span>아이스티(1box&gt;6)</span><span><span class="par">6</span> <span class="hand">1box</span></span></div>
+      <div class="cell"><span>배도라지차</span><span><span class="par">2BOX</span> <span class="hand">&nbsp;</span></span></div>
+      <div class="cell"><span>콘샐러드</span><span><span class="par">5</span> <span class="hand">2</span></span></div>
+    </div>
+    <p class="small muted" style="margin:3mm 0 0">빨간 숫자 = 기준 수량, 검은 손글씨 = 이번에 적은 값. 시트 3장, 품목 68개, 월·목 발주.</p>
+  </div>
+
+  <dl class="meta">
+    <dt>작성일</dt><dd>2026년 9월 4일</dd>
+    <dt>대상</dt><dd>매장 운영자, 재고·발주 담당 직원</dd>
+    <dt>현재 상태</dt><dd>v0.1 웹앱 완성(개인 기기용) · 공유·자동화는 이 문서의 제안</dd>
+    <dt>필요한 결정</dt><dd>5가지 (11장) — 결정되면 1주 안에 공유 버전 사용 시작</dd>
+  </dl>
+</section>
+
+<!-- ───────────────────────── 목차 ───────────────────────── -->
+<section class="section">
+  <h2>목차</h2>
+  <div class="toc">
+    <ol>
+      <li><span class="n">1</span><span>한 장 요약</span></li>
+      <li><span class="n">2</span><span>지금의 방식과 문제</span></li>
+      <li><span class="n">3</span><span>목표와 범위</span></li>
+      <li><span class="n">4</span><span>이미 만들어진 것 (v0.1)</span></li>
+      <li><span class="n">5</span><span>재고를 세지 않고 알아내는 방법</span></li>
+      <li><span class="n">6</span><span>직원 모두가 쓰는 웹 시스템 설계</span></li>
+      <li><span class="n">7</span><span>하루 사용 흐름</span></li>
+      <li><span class="n">8</span><span>단계별 일정</span></li>
+      <li><span class="n">9</span><span>비용</span></li>
+      <li><span class="n">10</span><span>위험과 대응</span></li>
+      <li><span class="n">11</span><span>결정이 필요한 것</span></li>
+      <li><span class="n">A</span><span>부록: 발주 계산 규칙 · 품목 그룹 · 용어</span></li>
+    </ol>
+  </div>
+
+  <h3 style="margin-top:10mm">이 문서를 읽는 방법</h3>
+  <p>바쁘면 <strong>1장</strong>과 <strong>11장</strong>만 읽어도 결정할 수 있습니다. 5장은 "자동으로 세는 게 되나"에 대한 답이고,
+  6장은 "앱 말고 웹으로 직원 모두가 쓸 수 있나"에 대한 답입니다. 기술 용어는 부록에 풀어 두었습니다.</p>
+</section>
+
+<!-- ───────────────────────── 1. 요약 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">1</span>한 장 요약</h2>
+  <p><strong>무엇을</strong> — 주 2회 재고조사와 씨앤비 발주를 휴대폰 웹앱으로 처리합니다. 앱스토어 앱이 아니라 링크로 여는 웹앱이며,
+  홈 화면에 추가하면 앱처럼 보이고 오프라인에서도 열립니다.</p>
+  <p><strong>왜</strong> — 지금은 68개 품목을 매번 세고, 시트에 적고, 머리로 계산해서, 사진을 찍어 보냅니다. 기록이 남지 않아
+  "얼마나 쓰는지"를 모르고, 담당자 한 명에게 일이 몰립니다.</p>
+  <p><strong>어떻게</strong> — 세 단계로 갑니다.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v">68 → 약 12</div><div class="l">발주일에 실제로 세는 품목 수 (예상 재고 + 예외 확인 도입 후 목표)</div></div>
+    <div class="kpi"><div class="v">0원</div><div class="l">호스팅·저장소 월 비용 (무료 구간)</div></div>
+    <div class="kpi"><div class="v">1주</div><div class="l">공유 버전 사용 시작까지 (결정 후)</div></div>
+    <div class="kpi"><div class="v">1탭</div><div class="l">직원 참여: 링크 열고 홈 화면에 추가</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th style="width:18mm">단계</th><th style="width:38mm">내용</th><th>직원이 느끼는 변화</th><th style="width:22mm">기간</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">1단계</td><td>공유 저장소 연결, 링크 배포</td><td>누가 세든 같은 화면. 발주 문자는 버튼 하나로 복사.</td><td>3~4 작업일</td></tr>
+      <tr><td class="lead">2단계</td><td>예상 재고 + 예외 확인</td><td>월·목 아침에 발주 초안이 이미 있고, "확인 필요" 표시된 10여 개만 실제로 본다.</td><td>4~5 작업일</td></tr>
+      <tr><td class="lead">3단계</td><td>입고 확인 · 핵심 품목 개봉 기록 · (조건부) POS 연동</td><td>예상이 더 정확해져 확인 품목이 더 줄어든다.</td><td>기록 3~4주 후</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <div class="t">"예상 재고"만으로는 부족한 이유와, 그보다 나은 방식</div>
+    예상 재고는 소비 속도로 "지금쯤 몇 개"를 계산하는 방식입니다. 추정이므로 틀릴 수 있고, 그래서 결국 다 세게 되기 쉽습니다.
+    제안하는 방식은 <strong>예상값이 발주 결정을 바꿀 수 있는 품목만 골라 확인</strong>하는 것입니다(5장 3절).
+    예상값의 오차가 결정에 영향이 없으면 세지 않고, 재발주 경계에 걸린 품목만 확인합니다. 세는 수는 줄이면서 발주 정확도는 지금과 같거나 더 좋아집니다.
+  </div>
+
+  <p><strong>결정 요청</strong> — ① 공유 저장소로 Firebase를 쓸지(계정 주체 포함) ② 예외 확인 방식 채택 ③ 사진 인식용 API 키 사용 여부
+  ④ POS 종류 ⑤ 시트에서 불확실했던 두 가지(레몬 2종, 각주 단위). 자세한 내용은 11장.</p>
+</section>
+
+<!-- ───────────────────────── 2. 배경 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">2</span>지금의 방식과 문제</h2>
+  <h3>지금 하는 일</h3>
+  <ol>
+    <li>월요일·목요일에 코팅된 재고조사 시트 3장을 들고 창고·선반·냉장고를 돌며 68개 품목을 셉니다.</li>
+    <li>빨간 기준 숫자(예: 유자청 8)와 남은 수량을 비교해 발주량을 머리로 정하고, 매직으로 적습니다.</li>
+    <li>시트를 사진으로 찍어 거래처(씨앤비)나 담당자에게 보냅니다. 다음 조사 때 지우고 다시 적습니다.</li>
+  </ol>
+
+  <h3>불편한 점</h3>
+  <table>
+    <thead><tr><th style="width:38mm">문제</th><th>왜 생기나</th><th style="width:40mm">결과</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">매번 전부 센다</td><td>지난번에 몇 개였는지, 얼마나 쓰는지 기록이 없어 매번 처음부터 셉니다.</td><td>회당 20~30분, 주 2회</td></tr>
+      <tr><td class="lead">계산·전달 실수</td><td>박스 단위(1box=6), 2BOX, "3개 미만이면 1박스" 같은 규칙을 사람이 기억해 적용합니다.</td><td>과·소발주, 누락</td></tr>
+      <tr><td class="lead">기록이 사라진다</td><td>시트를 지우고 다시 쓰므로 소비 추세, 품절 빈도를 알 수 없습니다.</td><td>기준 수량을 감으로 조정</td></tr>
+      <tr><td class="lead">한 사람에게 몰린다</td><td>시트와 규칙을 아는 사람만 할 수 있고, 다른 직원은 결과를 볼 수 없습니다.</td><td>휴무·퇴사 때 공백</td></tr>
+      <tr><td class="lead">사진 공유의 한계</td><td>손글씨 사진은 검색·집계가 안 되고, 잘못 읽히기도 합니다.</td><td>거래처와 확인 왕복</td></tr>
+    </tbody>
+  </table>
+
+  <h3>시트에서 확인된 규칙</h3>
+  <ul>
+    <li>기준 수량은 빨간 인쇄 숫자. 흰 스티커로 고친 값이 있으면 스티커 값(유자청 8, 청귤청 8, 블루베리청 6, 아이스크림 3).</li>
+    <li><code>(1box&gt;6)</code> 표기 품목(바닐라시럽, 아이스티, 카페시럽)은 1박스 = 6개, 박스로 발주.</li>
+    <li>배도라지차는 기준이 <code>2BOX</code>, 박스 단위로 셉니다.</li>
+    <li>각주: "유자, 청귤 최소발주 6○○ / 3개 미만일 때 1 BOX씩". 3개 미만이면 1박스로 옮겼습니다. "6" 뒤 단위는 사진이 흐려 확인이 필요합니다.</li>
+    <li>손글씨로 추가된 라면류(신라면·진라면·너구리·삼양라면·짜파게티)와 단무지는 기준 수량 없이 등록. 줄을 그어 지운 컵라면은 사용 안 함.</li>
+    <li>시트 1(주스 칸)과 시트 2(시럽 칸)에 <strong>레몬</strong>이 각각 있어 "레몬(주스)" / "레몬(시럽)"으로 구분했습니다.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── 3. 목표 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">3</span>목표와 범위</h2>
+  <div class="two">
+    <div>
+      <h3 style="margin-top:0">목표</h3>
+      <table class="compact">
+        <thead><tr><th>지표</th><th class="num">지금</th><th class="num">목표</th></tr></thead>
+        <tbody>
+          <tr><td>발주일에 실제로 세는 품목</td><td class="num">68개</td><td class="num">약 12개</td></tr>
+          <tr><td>재고조사 + 발주 문자 작성 시간</td><td class="num">20~30분</td><td class="num">10분 이내</td></tr>
+          <tr><td>규칙 적용 실수(박스 환산·재발주점)</td><td class="num">가끔</td><td class="num">0건 (자동 계산)</td></tr>
+          <tr><td>재고·발주 기록 보존</td><td class="num">없음</td><td class="num">전부, 담당자 포함</td></tr>
+          <tr><td>할 수 있는 직원</td><td class="num">1~2명</td><td class="num">전원</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h3 style="margin-top:0">범위</h3>
+      <p><strong>포함</strong></p>
+      <ul>
+        <li>재고조사 입력, 발주 수량 자동 계산, 발주 문자 생성</li>
+        <li>직원 전원이 같은 데이터를 보는 공유 저장소</li>
+        <li>예상 재고와 예외 확인, 입고 확인</li>
+        <li>사진으로 수량 읽기(선택), 기록·통계, 백업</li>
+      </ul>
+      <p><strong>제외 (이번 범위 아님)</strong></p>
+      <ul>
+        <li>거래처 시스템과 직접 연동(발주 문자는 카카오톡으로 보냄)</li>
+        <li>앱스토어 등록 앱 — 같은 웹 코드를 감싸 나중에 등록할 수 있음. 스토어 심사와 개발자 계정 비용(9장)이 따라오므로 웹앱으로 충분히 쓴 뒤 결정</li>
+        <li>원가·매출 관리, 유통기한 관리</li>
+        <li>씨앤비 외 다른 거래처 — 품목·거래처를 추가하면 같은 방식으로 확장 가능</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>원칙</h3>
+  <ul>
+    <li><strong>세는 시간을 줄이되 발주 정확도는 낮추지 않는다.</strong> 자동화가 못 미더운 품목은 언제든 직접 센 값이 우선입니다.</li>
+    <li><strong>직원에게 새 습관을 최소로 요구한다.</strong> 필수 습관은 "월·목에 앱 열기"와 "입고 왔을 때 확인 누르기" 두 가지뿐입니다.</li>
+    <li><strong>설치·계정·비용 없이 시작한다.</strong> 링크와 홈 화면 추가만으로 참여합니다.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── 4. 현재 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">4</span>이미 만들어진 것 (v0.1)</h2>
+  <p>시트 3장을 그대로 옮긴 웹앱이 완성되어 있습니다. 지금은 <strong>각자 휴대폰에만 저장</strong>되는 개인용이고, 6장의 공유 저장소를 붙이면 그대로 팀용이 됩니다.</p>
+
+  <div class="shots">
+    <figure><img src="img/count.png" alt="재고조사 화면" /><figcaption>재고조사 — 그룹별로 −/+ 또는 직접 입력. 빨간 숫자가 기준.</figcaption></figure>
+    <figure><img src="img/order.png" alt="발주 화면" /><figcaption>발주 — 부족분·박스 환산·재발주점 규칙을 적용한 발주 초안과 문자 미리보기.</figcaption></figure>
+    <figure><img src="img/history.png" alt="기록 화면" /><figcaption>기록 — 확정한 조사·발주, 소비 속도, 기준 수량 제안.</figcaption></figure>
+  </div>
+
+  <table class="compact">
+    <thead><tr><th style="width:28mm">화면</th><th>기능</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">재고조사</td><td>68개 품목을 시트 그룹별로 표시. 입력 즉시 저장. "빈칸=기준"으로 안 센 품목을 기준값으로 채우기.</td></tr>
+      <tr><td class="lead">발주</td><td>기준−현재, 박스 올림, 최소 발주, 재발주점 규칙 자동 적용. 수량 직접 수정 가능. 카카오톡용 발주 문자 복사·공유. 확정하면 기록으로.</td></tr>
+      <tr><td class="lead">사진 자동 입력</td><td>손글씨 시트 사진 또는 선반 사진을 찍으면 AI가 품목·수량을 읽어 채움. 확신도가 낮은 항목은 체크 해제 상태로 보여 줌.</td></tr>
+      <tr><td class="lead">기록</td><td>조사·발주 이력, 품목별 하루 소비량, 자주 품절되는 품목, 기준 수량 변경 제안.</td></tr>
+      <tr><td class="lead">품목</td><td>품목 추가·편집·숨김, 기준 수량, 1박스 개수, 발주·세는 단위, 규칙, 사진 인식용 별칭.</td></tr>
+      <tr><td class="lead">설정</td><td>매장·담당자 이름, 발주 요일, 백업 내보내기/불러오기(API 키 제외), 초기화.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>검증 상태</h3>
+  <ul>
+    <li>계산 규칙·통계·저장·사진 인식 파싱에 대한 자동 테스트 54개 통과.</li>
+    <li>실제 휴대폰 크기 브라우저에서 입력→발주→확정→기록→백업까지 16단계 자동 시나리오 통과.</li>
+    <li>독립 검토에서 나온 결함 19건(박스 단위 환산, 백업에 API 키 포함, 잘못된 백업 파일 수용 등) 수정 완료.</li>
+    <li>미확인: 실제 매장 사진으로 AI 인식 정확도를 아직 재 보지 못함(API 키 필요). 도입 첫 주에 시트 사진 5~6장으로 측정 예정.</li>
+  </ul>
+</section>
+
+<!-- ───────────────────────── 5. 자동 카운팅 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">5</span>재고를 세지 않고 알아내는 방법</h2>
+  <h3 style="margin-top:0">5.1 완전 자동이 어려운 이유</h3>
+  <p>카페 재고는 카메라나 센서가 보기 어려운 곳에 있습니다. 닫힌 박스 안, 앞 병에 가려진 뒷줄, 지하 창고의 미숫가루, 자몽·레몬·청포도처럼 생김새가 같은 병.
+  그래서 "기계가 다 세 준다"보다 <strong>"사람이 확인해야 할 것만 골라 준다"</strong>가 현실적인 목표입니다.</p>
+
+  <h3>5.2 후보 비교</h3>
+  <table>
+    <thead><tr><th style="width:30mm">방법</th><th>어떻게</th><th style="width:34mm">잘 맞는 품목</th><th style="width:44mm">한계</th><th style="width:16mm">준비</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">선반 사진 세기 <span class="pill ok">있음</span></td><td>선반별 사진을 찍으면 AI가 보이는 개수를 셈</td><td>앞줄에 한 줄로 보이는 병·팩(시럽, 티, 주스)</td><td>가려진 것, 닫힌 박스, 비슷한 병. 결과 확인 필요</td><td>없음</td></tr>
+      <tr><td class="lead">예상 재고</td><td>지난 조사값 + 입고 − 평균 소비×경과일</td><td>소비가 일정한 대부분 품목</td><td>추정이라 틀릴 수 있음. 주말·행사 변동</td><td>기록 3~4회</td></tr>
+      <tr><td class="lead">예외 확인 <span class="pill red">제안</span></td><td>예상값의 오차가 발주 결정을 바꿀 수 있는 품목만 표시해 실측</td><td>전 품목</td><td>예상 재고가 먼저 있어야 함</td><td>기록 3~4회</td></tr>
+      <tr><td class="lead">입고 확인</td><td>배송 도착 시 "입고 확인" 한 번. 부족분 표시</td><td>전 품목</td><td>안 누르면 예상값이 어긋남</td><td>습관 1개</td></tr>
+      <tr><td class="lead">개봉 −1</td><td>새 병을 딸 때 그 품목을 한 번 탭</td><td>개봉 시점이 분명한 핵심 품목(청, 원두, 우유)</td><td>직원 전원이 빠짐없이 눌러야 함</td><td>습관 1개</td></tr>
+      <tr><td class="lead">POS 판매 연동</td><td>메뉴 판매량 × 레시피 사용량으로 이론 소비량 계산</td><td>레시피가 정해진 음료 재료</td><td>POS 내보내기·레시피 표 필요. 폐기·서비스 소비는 못 잡음</td><td>POS 확인</td></tr>
+      <tr><td class="lead">저울·고정 카메라</td><td>선반 무게나 매일 자동 촬영</td><td>대형 매장</td><td>장비·설치·유지 비용</td><td>장비</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.3 제안: 예상 재고 + 예외 확인 ("결정 기준 확인법")</h3>
+  <p>발주에 필요한 것은 정확한 개수가 아니라 두 가지 판단입니다. <strong>기준보다 얼마나 부족한가</strong>, 그리고 <strong>재발주점(예: 3개 미만)을 넘었는가</strong>.
+  예상값에 오차를 붙여도 이 판단이 바뀌지 않으면 세지 않습니다. 판단이 갈리는 품목만 "확인 필요"로 표시합니다.</p>
+
+  <div class="two">
+    <div class="callout ok">
+      <div class="t">확인하지 않아도 되는 예 — 탄산수</div>
+      기준 8. 지난 목요일 5개, 그 뒤 입고 3개, 평균 소비 하루 1.2개(±0.5). 월요일 예상 <strong>3.2개 (2~5개)</strong>.
+      어느 값이든 3~6개를 발주해야 하고 초안은 5개. 1~2개 차이는 다음 조사에서 자연히 맞춰집니다. → <strong>세지 않음, 5개 발주 초안</strong>
+    </div>
+    <div class="callout warn">
+      <div class="t">확인해야 하는 예 — 유자청</div>
+      규칙: 3개 미만이면 1박스. 예상 <strong>3.4개 (2~5개)</strong>. 2개면 발주, 3개 이상이면 발주 안 함 — 결정이 갈립니다.
+      → <strong>"확인 필요" 표시</strong>. 직원은 이 품목만 실제로 봅니다.
+    </div>
+  </div>
+
+  <h4>정확도를 올리는 장치</h4>
+  <ul>
+    <li><strong>요일 구간별 소비 속도.</strong> 월→목(평일 3일)과 목→월(주말 포함 4일)을 따로 계산합니다. 지금의 조사 주기가 그대로 학습 데이터가 됩니다.</li>
+    <li><strong>입고 확인.</strong> 발주량이 그대로 들어왔다고 가정하지 않고, 배송 때 "입고 확인"으로 실제 수량을 반영합니다.</li>
+    <li><strong>오차 자기 점검.</strong> 실측할 때마다 예상값과의 차이를 기록해, 오차가 커진 품목은 자동으로 "확인 필요"에 올립니다. 반대로 오차가 작은 품목은 확인 대상에서 빠집니다.</li>
+    <li><strong>핵심 품목 개봉 기록(선택).</strong> 유자청·청귤청·원두·우유·아이스크림처럼 비싸거나 품절이 치명적인 5~6개만 "개봉 −1"을 적용하면 이 품목은 사실상 실시간 재고가 됩니다.</li>
+  </ul>
+
+  <h4>기대 효과와 한계</h4>
+  <p>기록이 3~4주(6~8회) 쌓이면 확인 대상은 68개 중 <strong>10~15개 안팎</strong>으로 줄어들 것으로 봅니다. 정확한 수는 매장의 소비 변동에 달려 있어 도입 후 측정합니다.
+  처음 2~3주는 전 품목을 세되, 앱이 예상값을 미리 채워 두므로 "세기"가 "틀린 것만 고치기"로 바뀌어 이 기간에도 시간은 줄어듭니다.</p>
+
+  <h3>5.4 POS 연동은 언제 하나</h3>
+  <p>POS에서 메뉴별 판매 수량을 내려받을 수 있고, 메뉴마다 재료 사용량(예: 유자차 1잔 = 유자청 30g)을 정리할 수 있다면 소비량을 추정이 아니라 계산으로 얻습니다.
+  예상 오차를 크게 줄이는 가장 강력한 방법이지만 준비물이 많아 <strong>3단계 이후, 조건부</strong>로 둡니다. POS 제품명을 알려 주시면 내보내기 가능 여부를 먼저 확인하겠습니다.</p>
+</section>
+
+<!-- ───────────────────────── 6. 설계 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">6</span>직원 모두가 쓰는 웹 시스템 설계</h2>
+  <p>앱스토어 앱 대신 <strong>링크로 여는 웹앱</strong>을 씁니다. 홈 화면에 추가하면 아이콘·전체 화면·오프라인 실행까지 앱과 같습니다.
+  지금 부족한 것은 하나, 직원들이 같은 데이터를 보는 <strong>공유 저장소</strong>입니다.</p>
+
+  <div class="diagram" style="width:86%;margin-left:auto;margin-right:auto">
+    <svg viewBox="0 0 720 230" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="시스템 구성도">
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5f666d"/></marker></defs>
+      <!-- 직원 휴대폰 -->
+      <g>
+        <rect x="20" y="30" width="150" height="46" rx="8" fill="#fff" stroke="#d7dbdf"/><text x="95" y="49" text-anchor="middle" font-size="12" font-weight="700" fill="#17191c">직원 A 휴대폰</text><text x="95" y="66" text-anchor="middle" font-size="10" fill="#5f666d">홈 화면 아이콘 · 오프라인 가능</text>
+        <rect x="20" y="92" width="150" height="46" rx="8" fill="#fff" stroke="#d7dbdf"/><text x="95" y="111" text-anchor="middle" font-size="12" font-weight="700" fill="#17191c">직원 B 휴대폰</text><text x="95" y="128" text-anchor="middle" font-size="10" fill="#5f666d">같은 링크</text>
+        <rect x="20" y="154" width="150" height="46" rx="8" fill="#fff" stroke="#d7dbdf"/><text x="95" y="173" text-anchor="middle" font-size="12" font-weight="700" fill="#17191c">매장 태블릿 / PC</text><text x="95" y="190" text-anchor="middle" font-size="10" fill="#5f666d">같은 링크</text>
+      </g>
+      <!-- 웹앱 -->
+      <rect x="250" y="70" width="190" height="90" rx="10" fill="#f3f4f2" stroke="#d7dbdf"/>
+      <text x="345" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#17191c">재고관리 웹앱</text>
+      <text x="345" y="116" text-anchor="middle" font-size="10" fill="#5f666d">정적 파일 · GitHub Pages 무료</text>
+      <text x="345" y="132" text-anchor="middle" font-size="10" fill="#5f666d">계산·화면은 휴대폰 안에서 처리</text>
+      <text x="345" y="148" text-anchor="middle" font-size="10" fill="#5f666d">링크에 매장 코드 포함 → 로그인 없음</text>
+      <!-- 저장소 -->
+      <rect x="520" y="30" width="180" height="76" rx="10" fill="#fff" stroke="#c93a3a" stroke-width="1.5"/>
+      <text x="610" y="55" text-anchor="middle" font-size="13" font-weight="700" fill="#17191c">공유 저장소 (Firebase)</text>
+      <text x="610" y="74" text-anchor="middle" font-size="10" fill="#5f666d">품목 · 재고조사 · 발주 기록</text>
+      <text x="610" y="90" text-anchor="middle" font-size="10" fill="#5f666d">실시간 동기화 · 무료 구간</text>
+      <!-- AI -->
+      <rect x="520" y="128" width="180" height="60" rx="10" fill="#fff" stroke="#d7dbdf" stroke-dasharray="4 3"/>
+      <text x="610" y="152" text-anchor="middle" font-size="12" font-weight="700" fill="#17191c">사진 인식 (Claude)</text>
+      <text x="610" y="170" text-anchor="middle" font-size="10" fill="#5f666d">선택 · 사진 보낼 때만 사용</text>
+      <!-- 화살표 -->
+      <line x1="170" y1="53" x2="250" y2="100" stroke="#5f666d" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+      <line x1="170" y1="115" x2="250" y2="115" stroke="#5f666d" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+      <line x1="170" y1="177" x2="250" y2="130" stroke="#5f666d" stroke-width="1.2" marker-end="url(#arr)" marker-start="url(#arr)"/>
+      <line x1="440" y1="100" x2="520" y2="70" stroke="#c93a3a" stroke-width="1.5" marker-end="url(#arr)" marker-start="url(#arr)"/>
+      <line x1="440" y1="135" x2="520" y2="158" stroke="#5f666d" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+      <text x="480" y="66" text-anchor="middle" font-size="9" fill="#c93a3a">실시간</text>
+      <text x="470" y="164" text-anchor="middle" font-size="9" fill="#5f666d">사진</text>
+    </svg>
+  </div>
+
+  <h3>6.1 공유 저장소 선택</h3>
+  <table class="compact">
+    <thead><tr><th style="width:34mm">방법</th><th>장점</th><th style="width:30mm">직원이 필요한 것</th><th style="width:46mm">단점</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">Firebase <span class="pill red">추천</span><br/><span class="small muted">구글이 운영하는 데이터 저장소</span></td><td>실시간 동기화, 오프라인 입력 후 자동 반영, 두 명이 동시에 세도 품목별로 합쳐짐, 카페 규모면 무료</td><td>링크만 (로그인 없음)</td><td>운영자가 구글 계정으로 프로젝트를 한 번 만들어야 함(약 10분, 카드 등록 불필요)</td></tr>
+      <tr><td class="lead">구글 스프레드시트 연동</td><td>데이터를 시트에서도 바로 볼 수 있음</td><td>링크만</td><td>동시 입력에 약하고 반응이 1~2초 느림. 실시간 갱신 없음</td></tr>
+      <tr><td class="lead">claude.ai 공유 페이지</td><td>설정 0. 지금 시험 중인 페이지에 공유 기능만 추가</td><td><strong>직원 전원 Claude 계정</strong></td><td>계정 조건이 카페 현실과 맞지 않을 가능성이 큼</td></tr>
+      <tr><td class="lead">직접 서버 운영</td><td>자유도 최대</td><td>링크만</td><td>월 비용, 장애 대응, 업데이트를 누군가 계속 맡아야 함</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 동작 방식 (Firebase 기준)</h3>
+  <ul>
+    <li><strong>매장 코드 링크.</strong> <span class="muted">…/#store=긴무작위코드</span> 형태의 링크를 카톡으로 받으면 그 매장 데이터에 바로 연결됩니다. 로그인·가입 없음.</li>
+    <li><strong>품목별 병합.</strong> 재고조사 값은 품목 단위로 저장되어, A가 청 종류를 세고 B가 브런치를 세도 서로 덮어쓰지 않습니다.</li>
+    <li><strong>오프라인.</strong> 지하 창고에서 신호가 없어도 입력은 저장되고, 신호가 잡히면 자동으로 올라갑니다.</li>
+    <li><strong>담당자 표시와 백업.</strong> 기기마다 이름을 한 번 적어 두면 기록에 "누가 언제"가 남고, 설정에서 언제든 JSON 파일로 내려받을 수 있습니다.</li>
+  </ul>
+
+  <h3>6.3 보안 수준 — 솔직하게</h3>
+  <div class="callout warn">
+    링크를 아는 사람은 누구나 보고 수정할 수 있습니다. 링크는 길고 무작위라 추측은 어렵지만, 퇴사자가 링크를 갖고 있으면 <strong>매장 코드를 새로 발급</strong>해 옮기는 방식으로 대응합니다.
+    카페 재고 정보의 민감도에서는 보통 충분하며, 나중에 필요하면 직원별 로그인(전화번호·PIN)을 추가할 수 있습니다.
+  </div>
+
+</section>
+
+<!-- ───────────────────────── 7. 흐름 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">7</span>하루 사용 흐름</h2>
+  <h3 style="margin-top:0">월요일 · 목요일 아침 (2단계 도입 후)</h3>
+  <div class="flow">
+    <div class="step auto"><div class="k">자동</div>앱이 예상 재고로 발주 초안을 만들어 둠<div class="who">전날 밤 계산</div></div>
+    <div class="step"><div class="k">1</div>재고조사 탭을 열면 "확인 필요" 품목 10여 개가 위에 모여 있음<div class="who">직원 · 1분</div></div>
+    <div class="step"><div class="k">2</div>그 품목만 실제로 보고 숫자를 고침(또는 사진 찍기)<div class="who">직원 · 5분</div></div>
+    <div class="step"><div class="k">3</div>발주 탭에서 초안을 훑고 필요한 것만 수정<div class="who">직원 · 2분</div></div>
+    <div class="step"><div class="k">4</div>"복사" → 카카오톡에 붙여 넣어 씨앤비에 전송 → "발주 확정"<div class="who">직원 · 1분</div></div>
+  </div>
+  <p class="small muted">1단계(공유 저장소만 있는 상태)에서는 2번이 "전 품목 입력"이고, 나머지는 같습니다.</p>
+
+  <h3>배송이 왔을 때</h3>
+  <div class="flow" style="grid-template-columns: repeat(3, 1fr)">
+    <div class="step"><div class="k">1</div>기록 탭의 최근 발주에서 "입고 확인"을 누름<div class="who">받은 직원 · 30초</div></div>
+    <div class="step"><div class="k">2</div>덜 온 품목이 있으면 그 수량만 고침<div class="who">필요할 때만</div></div>
+    <div class="step auto"><div class="k">자동</div>예상 재고에 실제 입고량이 반영됨</div>
+  </div>
+
+  <h3>그 밖의 경우</h3>
+  <table class="compact">
+    <thead><tr><th style="width:40mm">상황</th><th>하는 일</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">새 직원 합류</td><td>링크를 카톡으로 보냄 → 열어서 홈 화면에 추가 → 설정에서 이름 입력. 끝.</td></tr>
+      <tr><td class="lead">새 품목 · 기준 변경</td><td>품목 탭에서 추가·수정. 모든 기기에 즉시 반영.</td></tr>
+      <tr><td class="lead">핵심 품목 개봉(선택)</td><td>새 유자청을 딸 때 재고조사 탭에서 유자청 "−1" 한 번.</td></tr>
+      <tr><td class="lead">기준 수량 재검토</td><td>기록 탭의 "기준 수량 제안"(4일 소비량×1.5)을 보고 "적용"만 누름. 월 1회 권장.</td></tr>
+      <tr><td class="lead">지하 창고(미숫가루 등)</td><td>신호가 없어도 입력 가능. 올라오면 자동 동기화.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────── 8. 일정 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">8</span>단계별 일정</h2>
+  <p>작업일 기준이며, 결정(11장)이 나면 바로 시작할 수 있습니다. 각 단계는 끝날 때마다 실제로 쓸 수 있는 상태입니다.</p>
+  <table>
+    <thead><tr><th style="width:20mm">단계</th><th style="width:48mm">만드는 것</th><th>끝나면 할 수 있는 것</th><th style="width:20mm">소요</th><th style="width:30mm">필요한 것</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">1단계<br/><span class="small muted">공유</span></td><td>Firebase 연동, 매장 코드 링크, 품목별 병합, 담당자 표시, GitHub Pages 배포</td><td>직원 전원이 같은 재고·발주 기록을 봄. 발주 문자 복사·전송.</td><td class="num">3~4일</td><td>Firebase 프로젝트 설정값, Pages 설정 클릭</td></tr>
+      <tr><td class="lead">2단계<br/><span class="small muted">예상·예외</span></td><td>요일 구간별 소비 속도, 예상 재고 미리 채우기, "확인 필요" 판정과 정렬, 오차 기록</td><td>발주 아침에 초안이 준비되고 확인 대상만 세면 됨.</td><td class="num">4~5일</td><td>기록 3~4회 (1단계 사용 중 자연히 쌓임)</td></tr>
+      <tr><td class="lead">3단계<br/><span class="small muted">정밀</span></td><td>입고 확인, 핵심 품목 개봉 −1, 예상 오차 리포트</td><td>확인 대상이 더 줄고 품절 위험 품목이 먼저 보임.</td><td class="num">2~3일</td><td>핵심 품목 선정</td></tr>
+      <tr><td class="lead">조건부<br/><span class="small muted">POS</span></td><td>판매 내역 가져오기, 메뉴별 레시피 표, 이론 소비량</td><td>소비량을 추정이 아닌 계산으로.</td><td class="num">POS에 따라</td><td>POS 내보내기, 레시피 정리</td></tr>
+    </tbody>
+  </table>
+
+  <h3>도입 첫 달 계획</h3>
+  <table class="compact">
+    <thead><tr><th style="width:18mm">주</th><th>매장에서 하는 일</th><th>측정</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">1주</td><td>링크 배포, 홈 화면 추가, 월·목 전 품목 입력(앱으로). 시트는 병행.</td><td>입력 시간, 사진 인식 정확도(시트 사진 5~6장)</td></tr>
+      <tr><td class="lead">2주</td><td>시트 없이 앱만. 입고 확인 습관 시작.</td><td>발주 문자 오류 0건 확인</td></tr>
+      <tr><td class="lead">3~4주</td><td>예상 재고 켜기. "확인 필요" 품목만 세고 나머지는 예상값 검토.</td><td>확인 품목 수, 예상 오차, 조사 시간</td></tr>
+      <tr><td class="lead">5주~</td><td>핵심 품목 개봉 −1(선택), 기준 수량 제안 적용.</td><td>품절 발생 건수</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────── 9. 비용 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">9</span>비용</h2>
+  <table>
+    <thead><tr><th style="width:40mm">항목</th><th class="num" style="width:30mm">월 비용</th><th>설명</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">웹앱 호스팅 (GitHub Pages)</td><td class="num">0원</td><td>정적 파일 무료 호스팅. 트래픽 제한(월 100GB)은 카페 사용량의 수천 배.</td></tr>
+      <tr><td class="lead">공유 저장소 (Firebase)</td><td class="num">0원</td><td>무료 구간: 하루 읽기 5만 회·쓰기 2만 회. 직원 5명이 하루 종일 써도 수백 회 수준. 카드 등록 없이 시작.</td></tr>
+      <tr><td class="lead">사진 인식 (선택)</td><td class="num">수백~수천 원</td><td>사진 한 장에 수십 원(Anthropic API 사용 시). 주 2회 시트 3장 기준 월 1,000원 안팎. 안 쓰면 0원.</td></tr>
+      <tr><td class="lead">직원 기기</td><td class="num">0원</td><td>각자 휴대폰. 매장 공용 태블릿이 있으면 그것도 같은 링크로.</td></tr>
+      <tr><td class="lead">앱스토어 등록 (선택, 미권장)</td><td class="num">연 12만 원 안팎</td><td>애플 개발자 계정 연 99달러 + 구글 1회 25달러. 웹앱으로 충분하면 불필요.</td></tr>
+    </tbody>
+  </table>
+  <p>개발은 이 제안대로 진행하면 1~3단계 합쳐 <strong>약 10~12 작업일</strong>입니다. 유지관리는 품목·기준 변경은 직원이 앱에서 직접 하고, 코드 변경이 필요한 일은 드뭅니다.</p>
+</section>
+
+<!-- ───────────────────────── 10. 위험 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">10</span>위험과 대응</h2>
+  <table>
+    <thead><tr><th style="width:38mm">위험</th><th style="width:16mm">가능성</th><th>대응</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">직원이 앱을 안 쓰고 시트로 돌아감</td><td>중</td><td>첫 2주는 시트와 병행. 앱이 시트보다 빠르다는 것을 발주 시간으로 보여 줌. 필수 습관을 2개(월·목 열기, 입고 확인)로 제한.</td></tr>
+      <tr><td class="lead">예상 재고가 틀려 품절·과발주</td><td>중</td><td>결정이 갈리는 품목은 항상 실측. 오차가 커진 품목은 자동으로 확인 대상에 복귀. 직접 센 값이 항상 우선. 첫 2~3주는 전 품목 실측.</td></tr>
+      <tr><td class="lead">입고 확인을 빠뜨림</td><td>중</td><td>발주 후 예상 배송일이 지나면 "입고 확인 안 됨" 알림 표시. 미확인 시 발주량 전량 입고로 가정하고 다음 실측에서 보정.</td></tr>
+      <tr><td class="lead">링크 유출</td><td>낮</td><td>매장 코드 재발급으로 즉시 차단. 필요 시 직원별 PIN 추가.</td></tr>
+      <tr><td class="lead">저장소 장애·데이터 유실</td><td>낮</td><td>휴대폰에 마지막 상태가 남아 오프라인으로 계속 사용. 주 1회 자동 JSON 백업 안내.</td></tr>
+      <tr><td class="lead">사진 인식 오류</td><td>중</td><td>결과는 항상 확인 화면을 거침. 확신도 낮은 항목은 체크 해제. 비슷한 병(자몽·레몬·청포도)은 라벨 앞 정리로 개선.</td></tr>
+      <tr><td class="lead">시트 판독 오류(기준 수량 등)</td><td>낮</td><td>68개 품목 전부 두 번 독립 판독 후 대조. 남은 불확실 2건은 11장에서 확인 요청.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ───────────────────────── 11. 결정 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">11</span>결정이 필요한 것</h2>
+  <p>아래 다섯 가지가 정해지면 1단계를 바로 시작합니다. 기본안(굵게)을 그대로 택하셔도 됩니다.</p>
+
+  <div class="decision"><div class="n">1</div><div><div class="q">공유 저장소를 Firebase로 할까요? 계정은 누구 명의로?</div><div class="a"><strong>기본안: Firebase, 운영자 구글 계정.</strong> 프로젝트 만드는 순서를 화면 단위로 안내해 드립니다. 스프레드시트에서도 보고 싶으면 시트 연동으로 대체 가능.</div></div></div>
+  <div class="decision"><div class="n">2</div><div><div class="q">"예상 재고 + 예외 확인" 방식을 채택할까요?</div><div class="a"><strong>기본안: 채택.</strong> 첫 2~3주는 전 품목 실측(예상값 미리 채움), 이후 확인 대상만 실측. 개봉 −1은 핵심 품목 5~6개에만 선택 적용.</div></div></div>
+  <div class="decision"><div class="n">3</div><div><div class="q">사진 인식을 쓸까요? 쓴다면 API 키를 누가 관리할까요?</div><div class="a"><strong>기본안: 첫 달에 시험 후 결정.</strong> 시트 사진 5~6장으로 정확도를 재고, 쓸 만하면 운영자 명의 키를 앱 설정에 넣습니다(월 1,000원 안팎).</div></div></div>
+  <div class="decision"><div class="n">4</div><div><div class="q">매장 POS는 어떤 제품인가요? 판매 내역을 내려받을 수 있나요?</div><div class="a">제품명만 알려 주시면 내보내기 가능 여부와 레시피 연동 난이도를 확인해 조건부 단계를 확정합니다.</div></div></div>
+  <div class="decision"><div class="n">5</div><div><div class="q">시트에서 불확실했던 두 가지</div><div class="a">① 시트 1 "레몬"(주스 칸)과 시트 2 "레몬"(시럽 칸)은 실제로 다른 품목인가요? 각각 무엇인가요? ② 각주 "유자, 청귤 최소발주 6○○"의 단위(단지/상자)는 무엇인가요? 현재는 1박스=6개로 두었습니다.</div></div></div>
+
+  <div class="callout" style="margin-top:8mm">
+    <div class="t">결정 후 1주 안에 일어나는 일</div>
+    운영자가 Firebase 설정값을 전달 → 공유 저장소 연동·배포(3~4 작업일) → 매장 링크 발급 → 직원에게 카톡으로 링크 전송 → 다음 월요일 재고조사부터 앱으로.
+  </div>
+</section>
+
+<!-- ───────────────────────── 부록 ───────────────────────── -->
+<section class="section">
+  <h2><span class="num">A</span>부록</h2>
+  <h3 style="margin-top:0">A.1 발주 계산 규칙 (앱에 구현된 그대로)</h3>
+  <table class="compact">
+    <thead><tr><th style="width:44mm">상황</th><th>계산</th><th style="width:44mm">예</th></tr></thead>
+    <tbody>
+      <tr><td>일반 품목</td><td>발주 = 기준 − 현재 (0 미만이면 0)</td><td>탄산수 기준 8, 현재 3 → 5개</td></tr>
+      <tr><td>박스 발주 품목 (1box&gt;6)</td><td>부족 개수 ÷ 6을 올림한 박스 수</td><td>아이스티 기준 6, 현재 0 → 1박스</td></tr>
+      <tr><td>기준이 박스 단위 (2BOX)</td><td>박스로 세고 박스로 발주</td><td>배도라지차 기준 2박스, 현재 1박스 → 1박스</td></tr>
+      <tr><td>세는 단위가 박스인 품목</td><td>박스 수 × 1박스 개수로 환산해 계산. 1박스 개수가 없으면 계산하지 않고 경고</td><td>—</td></tr>
+      <tr><td>최소 발주 수량</td><td>부족분이 있으면 최소 수량 이상으로</td><td>—</td></tr>
+      <tr><td>재발주점 규칙 (유자청·청귤청)</td><td>현재 &lt; 3 이면 1박스, 아니면 0. 기준 수량은 쓰지 않음</td><td>유자청 현재 2 → 1박스 / 현재 3 → 없음</td></tr>
+      <tr><td>미입력 품목</td><td>발주 0, 발주 탭에 경고. 기준·규칙 없는 품목은 "기준 없음"으로 따로 표시</td><td>원두, 우유, 라면류</td></tr>
+      <tr><td>직접 수정</td><td>발주 탭에서 고친 수량이 우선. 재고조사 값을 다시 고치면 자동 계산으로 복귀</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <h3>A.2 품목 그룹 (68개, 사용 중 기준)</h3>
+  <table class="compact">
+    <thead><tr><th style="width:34mm">그룹</th><th>품목</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">과일청 · 아이스크림</td><td>유자청, 청귤청, 딸기청, 블루베리청, 아이스크림</td></tr>
+      <tr><td class="lead">주스 · 생수</td><td>착즙포도주스, 키위, 토마토, 레몬(주스), 노아(오렌지·당근·망고·키위), 골든메달사과주스, 에비앙, 달콤사과</td></tr>
+      <tr><td class="lead">원두 · 우유</td><td>원두/디카페인 원두, 우유/요거트바이오, 연유, 디카페인콜드브루</td></tr>
+      <tr><td class="lead">탄산 · 시럽 · 소스</td><td>탄산수, 바닐라시럽, 자몽, 레몬(시럽), 청포도, 카페시럽, 헤이즐넛 시럽, 카라멜소스, 카라멜시럽, 초코소스, 키위소스</td></tr>
+      <tr><td class="lead">티</td><td>보성그린티, 얼그레이, 배도라지차, 루이보스, 작설녹차, 캐모마일, 파인우롱, 아이스티, 애플티</td></tr>
+      <tr><td class="lead">토핑 · 기타</td><td>각설탕, 시나몬가루, 오렌지가니쉬, 대추, 잣, 미숫가루(지하)</td></tr>
+      <tr><td class="lead">브런치</td><td>망고푸딩, 사과푸딩, 스모크햄, 콘샐러드, 에그샐러드, 감자샐러드, 살사후실리샐러드, 체다치즈슬라이스, 시리얼, 키위드레싱, 부탄가스, 식용유, 양배추, 딸기잼, 일회용 버터, 당근, 단무지</td></tr>
+      <tr><td class="lead">라면</td><td>신라면, 진라면, 너구리, 삼양라면, 짜파게티 <span class="muted">(컵라면은 사용 안 함)</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>A.3 용어</h3>
+  <table class="compact">
+    <thead><tr><th style="width:34mm">용어</th><th>뜻</th></tr></thead>
+    <tbody>
+      <tr><td class="lead">웹앱 / 홈 화면 추가</td><td>브라우저에서 여는 앱. 아이폰은 Safari 공유 → "홈 화면에 추가", 안드로이드는 Chrome 메뉴 → "홈 화면에 추가". 설치 파일·스토어 없음.</td></tr>
+      <tr><td class="lead">기준 수량</td><td>시트의 빨간 숫자. 발주 후 이 수량이 되도록 채움.</td></tr>
+      <tr><td class="lead">재발주점</td><td>이 개수 미만이 되면 정해진 양을 발주하는 기준(유자청·청귤청의 3개).</td></tr>
+      <tr><td class="lead">예상 재고</td><td>지난 실측값 + 그 뒤 입고 − 평균 소비 × 지난 일수로 계산한 추정치.</td></tr>
+      <tr><td class="lead">예외 확인</td><td>예상값의 오차가 발주 결정을 바꿀 수 있는 품목만 실제로 세는 방식.</td></tr>
+      <tr><td class="lead">Firebase</td><td>구글이 운영하는 데이터 저장 서비스. 여러 기기가 같은 데이터를 실시간으로 공유할 때 씀. 소규모는 무료.</td></tr>
+      <tr><td class="lead">GitHub Pages</td><td>웹앱 파일을 무료로 올려 두는 곳. 링크로 접속.</td></tr>
+      <tr><td class="lead">API 키</td><td>사진 인식 AI를 쓰기 위한 비밀번호 같은 문자열. 사용한 만큼 과금.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</body>
+</html>

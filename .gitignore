@@ -3,3 +3,4 @@ e2e-out/
 dist/
 *.log
 .DS_Store
+docs/proposal/fonts/*.ttf
