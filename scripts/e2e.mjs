@@ -223,6 +223,28 @@ try {
   log(`서비스 워커: ${swReady}`);
 
   await context.close();
+
+  // 16. 단일 파일 빌드도 같은 화면을 띄우는지 (dist/cafe-inventory.html)
+  const single = path.join(root, 'dist', 'cafe-inventory.html');
+  if (fs.existsSync(single)) {
+    const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ko-KR' });
+    const p2 = await ctx2.newPage();
+    p2.on('console', (msg) => {
+      if (msg.type() === 'error') problems.push(`single-file console.error: ${msg.text()}`);
+    });
+    p2.on('pageerror', (err) => problems.push(`single-file pageerror: ${err.message}`));
+    await p2.goto(`${BASE}dist/cafe-inventory.html`);
+    await p2.waitForSelector('.tabbar');
+    assert.equal(await p2.locator('.item-row').count(), activeCount);
+    await p2.locator('input[data-input="count"][data-id="sparkling-water"]').fill('2');
+    await p2.locator('.tabbar [data-tab="order"]').click();
+    assert.match(await p2.locator('#order-text').textContent(), /- 탄산수 6개/);
+    await shot(p2, 'single-file-order');
+    await ctx2.close();
+    log('단일 파일 빌드 동작');
+  } else {
+    log('단일 파일 빌드 없음 (npm run build 후 검사됨)');
+  }
 } finally {
   await browser.close();
   server.kill();

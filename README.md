@@ -32,6 +32,16 @@ npm install
 npm run serve      # http://localhost:8080
 ```
 
+### 3) 파일 하나로 배포하기
+
+```bash
+npm run build      # dist/cafe-inventory.html (모든 코드·스타일이 들어 있는 단일 HTML)
+```
+
+`dist/cafe-inventory.html` 하나만 어디에 올리거나 메신저로 보내도 동작합니다.
+`dist/artifact.html`은 claude.ai 아티팩트용 조각으로, 아티팩트 안에서는 API 키 없이
+뷰어의 Claude 계정으로 사진 인식이 됩니다 (`claude.use("sample")`).
+
 ## 발주 수량 계산 규칙
 
 `src/logic/order.js` 에 있는 순수 함수이며 단위 테스트로 검증됩니다.
@@ -62,6 +72,9 @@ npm run serve      # http://localhost:8080
 기준 수량은 언제든 품목 탭에서 바꿀 수 있고, "품목을 기본 시트 데이터로 되돌리기"로 원복할 수 있습니다.
 
 ## 사진 자동 입력 (AI)
+
+claude.ai 아티팩트로 열었다면 설정 없이 바로 됩니다(처음 한 번 "이 페이지가 Claude를 사용"하도록 허용).
+GitHub Pages나 로컬에서 쓰려면 API 키가 필요합니다.
 
 1. [Anthropic Console](https://console.anthropic.com/)에서 API 키를 만듭니다.
 2. 설정 탭 → **Anthropic API 키**에 붙여 넣습니다. 키는 이 기기의 브라우저(localStorage)에만 저장됩니다.
@@ -102,6 +115,7 @@ scripts/e2e.mjs       실제 크로미움 스모크 테스트 + 스크린샷
 ```bash
 npm test          # 단위 테스트
 npm run e2e       # 브라우저 스모크 테스트 (Playwright, e2e-out/ 에 스크린샷)
+npm run build     # 단일 HTML 빌드 (dist/)
 npm run icons     # icons/icon.svg → PNG 아이콘 재생성
 ```
 

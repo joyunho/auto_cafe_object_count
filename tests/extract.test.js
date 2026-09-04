@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRequest, parseResponse, buildUserText, extractWithClient, MODEL, OUTPUT_SCHEMA } from '../src/ai/extract.js';
+import {
+  buildRequest,
+  parseResponse,
+  buildUserText,
+  buildPlainPrompt,
+  sanitizeParsed,
+  extractWithClient,
+  extractWithSample,
+  MODEL,
+  OUTPUT_SCHEMA,
+} from '../src/ai/extract.js';
 
 const items = [
   { id: 'ice-tea', name: '아이스티(1box>6)', boxSize: 6, aliases: ['아이스티'] },
@@ -49,6 +59,43 @@ test('parseResponse: JSON 텍스트를 정리해서 돌려준다', () => {
   assert.deepEqual(out.items[1], { name: '아이스티', count: 0, unit: 'box', confidence: 'low', note: 'x' });
   assert.deepEqual(out.unreadable, ['잣']);
   assert.equal(out.model, 'claude-opus-5');
+});
+
+test('parseResponse: max_tokens로 잘리면 오류', () => {
+  assert.throws(() => parseResponse({ stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"items":[]}' }] }), /잘렸/);
+});
+
+test('sanitizeParsed: 이상한 값을 걸러낸다', () => {
+  const out = sanitizeParsed({ items: [{ name: 'a', count: '3', unit: 'box', confidence: 'nope', note: 5 }, { name: 'b' }, null], unreadable: ['x', 1] });
+  assert.deepEqual(out, { items: [{ name: 'a', count: 3, unit: 'box', confidence: 'medium', note: '' }], unreadable: ['x'] });
+  assert.deepEqual(sanitizeParsed(null), { items: [], unreadable: [] });
+});
+
+test('buildPlainPrompt: 시스템 지시 + 사용자 지시 + JSON 형식', () => {
+  const p = buildPlainPrompt('sheet', items);
+  assert.match(p, /정확도가 최우선/);
+  assert.match(p, /손으로 쓴 값만/);
+  assert.match(p, /JSON 하나만/);
+});
+
+test('extractWithSample: sample.json에 프롬프트와 이미지를 넘긴다', async () => {
+  let captured;
+  const sample = {
+    async json(prompt, opts) {
+      captured = { prompt, opts };
+      return { items: [{ name: '유자청', count: 2, unit: 'ea', confidence: 'high', note: '' }], unreadable: [] };
+    },
+  };
+  const files = [new Blob(['x'])];
+  const out = await extractWithSample(sample, { mode: 'shelf', items, files });
+  assert.equal(captured.opts.images, files);
+  assert.equal(captured.opts.cache, false);
+  assert.match(captured.prompt, /실물 재고 사진/);
+  assert.equal(out.items[0].count, 2);
+  // 오류 코드는 한국어 메시지로
+  const failing = { async json() { throw { code: 'rate_limited', message: 'x' }; } };
+  await assert.rejects(() => extractWithSample(failing, { mode: 'sheet', items, files }), /잠시 후/);
+  await assert.rejects(() => extractWithSample(sample, { mode: 'sheet', items, files: [] }), /사진/);
 });
 
 test('parseResponse: refusal이면 오류', () => {

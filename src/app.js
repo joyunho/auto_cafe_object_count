@@ -171,12 +171,18 @@ export const app = {
   },
 };
 
-window.addEventListener('DOMContentLoaded', () => {
+// 단일 파일 빌드(scripts/build-single.mjs)에서는 esbuild define으로 true가 된다.
+const SINGLE_FILE = typeof __SINGLE_FILE__ !== 'undefined' && __SINGLE_FILE__;
+
+function boot() {
   app.mount(document.getElementById('app'));
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  if (!SINGLE_FILE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
-});
+}
+
+if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot);
+else boot();
 
 // 디버깅용
 window.__cafeApp = app;

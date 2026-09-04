@@ -1,31 +1,51 @@
 // 사진 자동 입력 모달: 사진 선택 → Claude 비전 인식 → 매칭 결과 확인 → 재고조사에 적용
+//
+// 인식 경로 두 가지:
+//   1) claude.ai 아티팩트 안: 뷰어의 Claude 계정(claude.use("sample")) — API 키 불필요
+//   2) 그 외(GitHub Pages 등): 설정에 저장한 Anthropic API 키로 직접 호출
 import { esc } from './html.js';
-import { extractCounts, fileToBase64Image } from '../ai/extract.js';
+import { extractCounts, extractWithSample, detectSample, fileToBase64Image } from '../ai/extract.js';
 import { matchRecognized } from '../logic/match.js';
 import { toEach } from '../logic/order.js';
 
-const ui = { images: [], result: null, busy: false, error: null };
+const ui = { images: [], result: null, busy: false, error: null, sample: undefined, abort: null };
+
+function canRun(s) {
+  return ui.images.length > 0 && (ui.sample || s.settings.apiKey) && !ui.busy;
+}
 
 function stepHtml(s) {
   const mode = s.settings.photoMode || 'sheet';
+  const viaSample = !!ui.sample;
+  const accept = viaSample && ui.sample.limits?.mediaTypes?.length ? ui.sample.limits.mediaTypes.join(',') : 'image/*';
   return `
     <h2>📷 사진으로 자동 입력</h2>
-    ${!s.settings.apiKey ? `<p class="small" style="color:var(--warn)">설정 탭에서 Anthropic API 키를 먼저 입력하세요.</p>` : ''}
+    ${
+      viaSample
+        ? `<p class="small muted">이 페이지에서는 API 키 없이 내 Claude 계정으로 인식합니다. (처음 한 번 허용을 묻습니다)</p>`
+        : ui.sample === undefined
+          ? `<p class="small muted">인식 방법 확인 중…</p>`
+          : !s.settings.apiKey
+            ? `<p class="small" style="color:var(--warn)">설정 탭에서 Anthropic API 키를 먼저 입력하세요.</p>`
+            : ''
+    }
     <div class="field"><label>무엇을 찍었나요?</label>
       <select id="photo-mode">
         <option value="sheet" ${mode === 'sheet' ? 'selected' : ''}>손글씨 재고 시트 (적힌 숫자 읽기)</option>
         <option value="shelf" ${mode === 'shelf' ? 'selected' : ''}>선반/냉장고 실물 (개수 세기)</option>
       </select></div>
     <div class="row wrap">
-      <label class="btn primary">📸 촬영 <input type="file" accept="image/*" capture="environment" data-change="photo-files" class="sr-only" /></label>
-      <label class="btn">🖼️ 앨범에서 선택 <input type="file" accept="image/*" multiple data-change="photo-files" class="sr-only" /></label>
+      <label class="btn primary">📸 촬영 <input type="file" accept="${esc(accept)}" capture="environment" data-change="photo-files" class="sr-only" /></label>
+      <label class="btn">🖼️ 앨범에서 선택 <input type="file" accept="${esc(accept)}" multiple data-change="photo-files" class="sr-only" /></label>
+      ${ui.images.length ? `<button type="button" class="btn ghost" data-action="photo-clear">사진 비우기</button>` : ''}
     </div>
     <div class="thumbs mt" id="photo-thumbs">${ui.images.map((im, i) => `<img src="${im.previewUrl}" alt="선택한 사진 ${i + 1}" />`).join('')}</div>
     ${ui.error ? `<p class="small" style="color:var(--danger)">${esc(ui.error)}</p>` : ''}
+    ${ui.busy ? `<p class="small muted"><span class="spinner"></span> 사진을 읽는 중입니다. 보통 10~60초 걸립니다.</p>` : ''}
     <div class="modal-actions">
-      <button type="button" class="btn" data-action="modal-close">닫기</button>
-      <button type="button" class="btn primary" data-action="photo-run" ${ui.images.length && s.settings.apiKey && !ui.busy ? '' : 'disabled'}>
-        ${ui.busy ? '<span class="spinner"></span> 인식 중…' : `인식 시작 (${ui.images.length}장)`}
+      ${ui.busy ? `<button type="button" class="btn" data-action="photo-stop">중지</button>` : `<button type="button" class="btn" data-action="modal-close">닫기</button>`}
+      <button type="button" class="btn primary" data-action="photo-run" ${canRun(s) ? '' : 'disabled'}>
+        ${ui.busy ? '인식 중…' : `인식 시작 (${ui.images.length}장)`}
       </button>
     </div>`;
 }
@@ -77,8 +97,15 @@ export const changes = {
     const files = [...(el.files || [])];
     if (!files.length) return;
     ui.error = null;
+    const max = ui.sample?.limits?.maxCount || 10;
     try {
-      for (const f of files) ui.images.push(await fileToBase64Image(f));
+      for (const f of files) {
+        if (ui.images.length >= max) {
+          ui.error = `사진은 한 번에 최대 ${max}장까지 보낼 수 있습니다.`;
+          break;
+        }
+        ui.images.push(await fileToBase64Image(f));
+      }
     } catch {
       ui.error = '사진을 읽을 수 없습니다.';
     }
@@ -87,12 +114,25 @@ export const changes = {
 };
 
 export const actions = {
-  'photo-open'(el, e, app) {
+  async 'photo-open'(el, e, app) {
     ui.images = [];
     ui.result = null;
     ui.error = null;
     ui.busy = false;
     app.openModal(stepHtml(app.state));
+    if (ui.sample === undefined) {
+      ui.sample = null; // 확인 중 중복 호출 방지
+      ui.sample = await detectSample();
+    }
+    rerender(app);
+  },
+  'photo-clear'(el, e, app) {
+    ui.images = [];
+    ui.error = null;
+    rerender(app);
+  },
+  'photo-stop'() {
+    ui.abort?.abort();
   },
   async 'photo-run'(el, e, app) {
     const s = app.state;
@@ -103,10 +143,13 @@ export const actions = {
     });
     ui.busy = true;
     ui.error = null;
+    ui.abort = new AbortController();
     rerender(app);
     try {
       const items = s.items.filter((it) => it.active !== false);
-      const res = await extractCounts({ apiKey: s.settings.apiKey, mode, items, images: ui.images });
+      const res = ui.sample
+        ? await extractWithSample(ui.sample.sample, { mode, items, files: ui.images.map((im) => im.file), signal: ui.abort.signal })
+        : await extractCounts({ apiKey: s.settings.apiKey, mode, items, images: ui.images });
       const { matched, unmatched } = matchRecognized(res.items, items);
       // 인식 결과의 confidence/unit/note를 매칭 결과에 붙인다
       for (const m of matched) {
@@ -118,6 +161,7 @@ export const actions = {
       ui.error = err?.message || String(err);
     } finally {
       ui.busy = false;
+      ui.abort = null;
     }
     rerender(app);
   },
@@ -138,11 +182,13 @@ export const actions = {
         const i = Number(c.dataset.idx);
         const m = ui.result.matched[i];
         const it = s.items.find((x) => x.id === m.itemId);
+        if (!it) continue;
         const raw = Number(nums.find((n) => Number(n.dataset.idx) === i)?.value ?? m.count);
         if (!Number.isFinite(raw)) continue;
         // 인식 단위(box/ea) → 품목의 세는 단위로 환산
         let v = raw;
-        if (m.unit === 'box' && it?.countUnit !== 'box') v = toEach(it, raw, 'box');
+        if (m.unit === 'box' && it.countUnit !== 'box') v = toEach(it, raw, 'box');
+        else if (m.unit === 'ea' && it.countUnit === 'box' && it.boxSize) v = raw / it.boxSize;
         sess.counts[m.itemId] = Math.max(0, Math.round(v));
         applied++;
       }

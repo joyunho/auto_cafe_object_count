@@ -14,7 +14,7 @@ export function progress(s, sess) {
 
 function itemMeta(it) {
   const parts = [];
-  if (it.par != null) parts.push(`기준 ${it.par}${it.parUnit === 'box' ? '박스' : '개'}`);
+  if (it.par != null) parts.push(`기준 <span class="par">${it.par}</span>${it.parUnit === 'box' ? '박스' : '개'}`);
   else parts.push('기준 없음');
   if (it.boxSize) parts.push(`1박스=${it.boxSize}개`);
   if (it.rule?.type === 'reorderPoint') parts.push(`${it.rule.threshold}개 미만 시 ${it.rule.orderQty}${unitLabel(it.orderUnit)}`);
@@ -29,7 +29,7 @@ function rowHtml(it, val) {
     <div class="item-row ${has ? 'done' : ''}" data-row="${esc(it.id)}">
       <div>
         <div class="name">${esc(it.name)}</div>
-        <div class="meta">${esc(itemMeta(it))}</div>
+        <div class="meta">${itemMeta(it)}</div>
       </div>
       <div>
         <div class="stepper" role="group" aria-label="${esc(it.name)} 수량">

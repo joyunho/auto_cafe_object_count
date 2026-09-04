@@ -88,6 +88,35 @@ export function buildUserText(mode, items) {
   ].join('\n');
 }
 
+/** JSON만 답하라는 지시 (구조화 출력을 쓸 수 없는 경로용 — 예: 아티팩트의 claude.use("sample")) */
+export function buildJsonInstruction() {
+  return [
+    '',
+    '답은 아래 형태의 JSON 하나만 출력하세요. 설명 문장, 코드펜스 없이 JSON만.',
+    '{"items":[{"name":"품목명","count":정수,"unit":"ea"|"box","confidence":"high"|"medium"|"low","note":"애매한 이유 또는 빈 문자열"}],"unreadable":["읽지 못한 품목명"]}',
+  ].join('\n');
+}
+
+/** 시스템 프롬프트 + 사용자 지시 + JSON 형식 지시를 하나의 문자열로 (sample 경로용) */
+export function buildPlainPrompt(mode, items) {
+  return `${buildSystemPrompt()}\n\n${buildUserText(mode, items)}\n${buildJsonInstruction()}`;
+}
+
+/** 모델이 준 JSON 객체를 앱이 쓰는 형태로 정리 */
+export function sanitizeParsed(parsed) {
+  const items = (parsed?.items || [])
+    .filter((it) => it && typeof it.name === 'string' && Number.isFinite(Number(it.count)))
+    .map((it) => ({
+      name: it.name.trim(),
+      count: Math.max(0, Math.round(Number(it.count))),
+      unit: it.unit === 'box' ? 'box' : 'ea',
+      confidence: ['high', 'medium', 'low'].includes(it.confidence) ? it.confidence : 'medium',
+      note: typeof it.note === 'string' ? it.note : '',
+    }));
+  const unreadable = Array.isArray(parsed?.unreadable) ? parsed.unreadable.filter((x) => typeof x === 'string') : [];
+  return { items, unreadable };
+}
+
 /**
  * Messages API 요청 본문 생성 (순수 함수 — 테스트 가능)
  * @param {{data:string, mediaType:string}[]} images base64 이미지
@@ -127,16 +156,10 @@ export function parseResponse(response) {
   } catch {
     throw new Error('모델 응답을 JSON으로 해석할 수 없습니다.');
   }
-  const items = (parsed.items || [])
-    .filter((it) => it && typeof it.name === 'string' && Number.isFinite(it.count))
-    .map((it) => ({
-      name: it.name.trim(),
-      count: Math.max(0, Math.round(it.count)),
-      unit: it.unit === 'box' ? 'box' : 'ea',
-      confidence: it.confidence || 'medium',
-      note: it.note || '',
-    }));
-  return { items, unreadable: parsed.unreadable || [], usage: response.usage, model: response.model };
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('모델 응답이 잘렸습니다. 사진 수를 줄여 다시 시도하세요.');
+  }
+  return { ...sanitizeParsed(parsed), usage: response.usage, model: response.model };
 }
 
 let sdkPromise = null;
@@ -177,6 +200,51 @@ export async function extractCounts({ apiKey, mode, items, images, AnthropicClas
   return extractWithClient(client, { mode, items, images });
 }
 
+/**
+ * claude.ai 아티팩트 안에서는 API 키 없이 뷰어의 Claude 계정으로 인식할 수 있다
+ * (`claude.use("sample")`). 사용할 수 있으면 sample 함수를, 아니면 null을 돌려준다.
+ */
+export async function detectSample() {
+  try {
+    if (typeof window === 'undefined' || !window.claude?.use) return null;
+    const sample = await window.claude.use('sample');
+    if (!sample) return null;
+    const limits = await sample.limits().catch(() => null);
+    if (!limits?.images) return null;
+    return { sample, limits: limits.images };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 아티팩트 경로: 뷰어의 Claude로 사진 인식.
+ * @param {Function} sample claude.use("sample") 결과
+ * @param {{mode:'sheet'|'shelf', items:object[], files:Blob[], signal?:AbortSignal}} p
+ */
+export async function extractWithSample(sample, { mode, items, files, signal }) {
+  if (!files?.length) throw new Error('사진을 선택하세요.');
+  const prompt = buildPlainPrompt(mode, items);
+  try {
+    const parsed = await sample.json(prompt, { images: files, modelTier: 'default', cache: false, signal });
+    return { ...sanitizeParsed(parsed), usage: null, model: 'claude (artifact)' };
+  } catch (e) {
+    const code = e?.code || 'upstream_error';
+    const msgs = {
+      not_granted: '이 페이지에서 Claude 사용이 허용되지 않았습니다.',
+      sampling_disabled: '이 계정에서는 Claude 인식을 쓸 수 없습니다.',
+      rate_limited: '요청이 많습니다. 잠시 후 다시 시도하세요.',
+      image_rejected: '사진 파일을 처리할 수 없습니다. 다른 사진으로 시도하세요.',
+      images_unavailable: '이 화면에서는 사진을 보낼 수 없습니다.',
+      refused: '모델이 이 사진의 처리를 거절했습니다.',
+      invalid_json: '인식 결과를 해석하지 못했습니다. 다시 시도하세요.',
+      cancelled: '취소했습니다.',
+      prompt_too_large: '품목 목록이 너무 깁니다. 사용하지 않는 품목을 끄고 다시 시도하세요.',
+    };
+    throw new Error(msgs[code] || `인식에 실패했습니다 (${code}).`);
+  }
+}
+
 /** 브라우저: File → 리사이즈된 JPEG base64 */
 export async function fileToBase64Image(file, { maxSide = 1600, quality = 0.85 } = {}) {
   const bitmap = await createImageBitmap(file);
@@ -188,5 +256,5 @@ export async function fileToBase64Image(file, { maxSide = 1600, quality = 0.85 }
   canvas.height = h;
   canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', quality);
-  return { data: dataUrl.split(',')[1], mediaType: 'image/jpeg', width: w, height: h, previewUrl: dataUrl };
+  return { data: dataUrl.split(',')[1], mediaType: 'image/jpeg', width: w, height: h, previewUrl: dataUrl, file };
 }

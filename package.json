@@ -9,10 +9,12 @@
     "serve": "node scripts/serve.mjs",
     "e2e": "node scripts/e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
+    "build": "node scripts/build-single.mjs && node scripts/build-single.mjs --fragment",
     "extract": "node scripts/extract-from-photo.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
+    "esbuild": "^0.25.0",
     "playwright-core": "1.56.1"
   },
   "engines": {
