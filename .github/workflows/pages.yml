@@ -1,0 +1,36 @@
+# GitHub Pages 배포: 저장소 Settings → Pages → Source를 "GitHub Actions"로 설정하면
+# 기본 브랜치에 push할 때마다 https://<계정>.github.io/<저장소>/ 에 배포됩니다.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect static files
+        run: |
+          mkdir -p dist
+          cp -r index.html manifest.webmanifest sw.js src icons dist/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

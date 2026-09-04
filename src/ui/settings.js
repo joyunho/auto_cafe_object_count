@@ -1,0 +1,122 @@
+// 설정 탭: 매장 정보, 발주 요일, API 키, 백업/복원
+import { esc } from './html.js';
+import { exportJSON, importJSON, defaultState } from '../store.js';
+
+const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+export function render(s) {
+  const st = s.settings;
+  return `
+    <section class="card">
+      <h2>매장 · 발주</h2>
+      <div class="field"><label>매장 이름</label><input type="text" data-change="setting" data-key="storeName" value="${esc(st.storeName)}" placeholder="예: OO점" /></div>
+      <div class="field"><label>담당자 이름 (발주 문자 끝에 표시)</label><input type="text" data-change="setting" data-key="senderName" value="${esc(st.senderName)}" /></div>
+      <div class="field"><label>거래처</label><input type="text" data-change="setting" data-key="supplierName" value="${esc(st.supplierName)}" /></div>
+      <div class="field"><label>발주 문자 제목</label><input type="text" data-change="setting" data-key="orderTitle" value="${esc(st.orderTitle)}" /></div>
+      <div class="field"><label>발주 요일</label>
+        <div class="row wrap">${DAYS.map((d, i) => `<label class="row small" style="gap:4px"><input type="checkbox" data-change="order-day" data-day="${i}" ${st.orderDays.includes(i) ? 'checked' : ''}/>${d}</label>`).join('')}</div>
+        <div class="hint">새 재고조사의 기본 발주일을 계산할 때 씁니다.</div></div>
+    </section>
+
+    <section class="card">
+      <h2>사진 자동 입력 (AI)</h2>
+      <div class="field"><label>Anthropic API 키</label>
+        <div class="row"><input type="password" id="api-key-input" data-change="setting" data-key="apiKey" value="${esc(st.apiKey)}" placeholder="sk-ant-..." autocomplete="off" style="flex:1" />
+        <button type="button" class="btn sm" data-action="apikey-toggle">보기</button></div>
+        <div class="hint">키는 이 기기의 브라우저에만 저장되며 Anthropic API 호출에만 사용됩니다. 사진 인식 모델: claude-opus-5. 거절 시 자동 대체 모델(fallback)이 켜져 있습니다.</div></div>
+      <div class="field"><label>기본 인식 방식</label>
+        <select data-change="setting" data-key="photoMode">
+          <option value="sheet" ${st.photoMode === 'sheet' ? 'selected' : ''}>손글씨 재고 시트 사진 읽기</option>
+          <option value="shelf" ${st.photoMode === 'shelf' ? 'selected' : ''}>선반/냉장고 실물 사진에서 개수 세기</option>
+        </select></div>
+    </section>
+
+    <section class="card">
+      <h2>백업 · 복원</h2>
+      <p class="small muted">모든 데이터는 이 기기의 브라우저에만 저장됩니다. 기기를 바꾸거나 다른 직원과 공유하려면 백업 파일을 내보내 옮기세요.</p>
+      <div class="row wrap">
+        <button type="button" class="btn" data-action="backup-export">⬇️ 백업 내보내기 (JSON)</button>
+        <label class="btn">⬆️ 백업 불러오기 <input type="file" accept="application/json,.json" data-change="backup-import" class="sr-only" /></label>
+      </div>
+      <div class="row wrap mt">
+        <button type="button" class="btn danger" data-action="data-wipe">모든 데이터 초기화</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>정보</h2>
+      <p class="small muted" style="margin:0">
+        씨앤비 재고조사 시트(월·목 발주) 3장을 기준으로 만든 카페 재고관리 앱입니다.<br/>
+        홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 열립니다 (사진 인식 제외).<br/>
+        버전 0.1.0
+      </p>
+    </section>`;
+}
+
+function download(filename, text) {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export const changes = {
+  setting(el, e, app) {
+    app.set((s) => {
+      s.settings[el.dataset.key] = el.value.trim();
+    });
+    app.toast('저장됨', 900);
+  },
+  'order-day'(el, e, app) {
+    app.update((s) => {
+      const d = Number(el.dataset.day);
+      const set = new Set(s.settings.orderDays);
+      if (el.checked) set.add(d);
+      else set.delete(d);
+      s.settings.orderDays = [...set].sort();
+      if (!s.settings.orderDays.length) s.settings.orderDays = [1, 4];
+    });
+  },
+  'backup-import'(el, e, app) {
+    const file = el.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      try {
+        const st = importJSON(text);
+        if (!confirm(`백업을 불러올까요?\n품목 ${st.items.length}개, 기록 ${st.sessions.length}회.\n현재 데이터는 덮어써집니다.`)) return;
+        app.update((s) => Object.assign(s, st, { ui: s.ui }));
+        app.toast('백업을 불러왔습니다');
+      } catch {
+        app.toast('백업 파일을 읽을 수 없습니다');
+      }
+    });
+  },
+};
+
+export const actions = {
+  'apikey-toggle'(el) {
+    const input = document.getElementById('api-key-input');
+    input.type = input.type === 'password' ? 'text' : 'password';
+    el.textContent = input.type === 'password' ? '보기' : '숨김';
+  },
+  'backup-export'(el, e, app) {
+    const d = new Date();
+    const name = `cafe-inventory-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}.json`;
+    download(name, exportJSON(app.state));
+  },
+  'data-wipe'(el, e, app) {
+    if (!confirm('모든 품목·기록·설정을 지우고 처음 상태로 돌릴까요? 되돌릴 수 없습니다.')) return;
+    if (!confirm('정말로 초기화합니다. 계속할까요?')) return;
+    app.update((s) => {
+      const fresh = defaultState();
+      fresh.ui.tab = 'settings';
+      Object.assign(s, fresh);
+    });
+    app.toast('초기화했습니다');
+  },
+};
