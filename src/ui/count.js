@@ -30,7 +30,7 @@ function itemMeta(it, f) {
   if (f) {
     const u = it.countUnit === 'box' ? '박스' : '개';
     const when = f.days === 0 ? '오늘' : f.days === 1 ? '어제' : `${f.days}일 전`;
-    parts.push(`예상 <b>${f.expected}${u}</b> <span class="tiny">(${f.low}~${f.high}, ${when} ${f.basis.count}${u}${f.basis.received ? ` + 입고 ${f.basis.received}` : ''})</span>`);
+    parts.push(`예상 <b>${f.expected}${u}</b> <span class="tiny">(${f.low}~${f.high}, ${when} ${f.basis.count}${u}${f.basis.received ? ` + 입고 ${f.basis.received}` : ''}${f.estimated ? ', 포장 크기 추정' : ''})</span>`);
     if (f.stale) parts.push('<span style="color:var(--warn)">실측한 지 오래됨</span>');
     else if (f.crossesZero) parts.push('<span style="color:var(--warn)">떨어졌을 수 있음</span>');
   }

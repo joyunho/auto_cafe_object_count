@@ -16,7 +16,8 @@ const n0 = (x) => (x == null ? '–' : Math.round(x).toLocaleString('ko-KR'));
 const n1 = (x) => (x == null ? '–' : (Math.round(x * 10) / 10).toLocaleString('ko-KR'));
 const n2 = (x) => (x == null ? '–' : (Math.round(x * 100) / 100).toLocaleString('ko-KR', { minimumFractionDigits: 2 }));
 const mLabel = (m) => `${Number(m.slice(5))}월`;
-const unitKo = { g: 'g', ml: 'ml', ea: '개', bag: '봉', shot: '샷', pump: '펌프', serving: '잔' };
+const unitKo = { g: 'g', ml: 'ml', ea: '개', bag: '봉', shot: '샷', pump: '펌프', serving: '잔', scoop: '스쿱' };
+const short = (t, n = 46) => (t && t.length > n ? t.slice(0, n - 1) + '…' : t || '');
 
 // ── 차트: 월별 음료 잔 수 (막대) ─────────────────────────────
 function barChart(months, values, { w = 720, h = 170, color = '#2a78d6', label = '' } = {}) {
@@ -109,20 +110,20 @@ const rowsHtml = withPkg
     const cov = coverage(r);
     const covCls = cov == null ? '' : cov < 4 ? 'bad' : cov > 30 ? 'lots' : '';
     return `<tr>
-      <td class="lead">${esc(dropWords(r.name))}${r.assumed ? ' <span class="pill warn">가정</span>' : ''}</td>
+      <td class="lead">${esc(dropWords(r.name))}${r.assumed ? ' <span class="pill warn">추정</span>' : ''}</td>
       <td class="num">${n0(r.totalUnits)}</td>
       <td class="num">${n2(r.avgPerDay)}</td>
       <td class="num">${n2(r.peakPerDay)}</td>
       <td class="num">${parCell(r)}</td>
       <td class="num ${covCls}">${cov == null ? '–' : n0(cov) + '일'}</td>
       <td class="num">${r.suggested ? `${r.suggested.mon_thu} / ${r.suggested.thu_mon}` : '–'}</td>
-      <td class="small muted note">${esc(r.note)}</td>
+      <td class="small muted note">${esc(short(r.note))}</td>
     </tr>`;
   })
   .join('');
 
 const noPkgHtml = noPkg
-  .map((r) => `<tr><td class="lead">${esc(r.name)}</td><td class="num">${n0(r.totalRaw)} ${unitKo[r.unit] || r.unit}</td><td class="num">${n1(r.totalRaw / 365)} ${unitKo[r.unit] || r.unit}</td><td class="num">${parCell(r)}</td><td class="small muted">${esc(r.note)}</td></tr>`)
+  .map((r) => `<tr><td class="lead">${esc(r.name)}</td><td class="num">${n0(r.totalRaw)} ${unitKo[r.unit] || r.unit}</td><td class="num">${n1(r.totalRaw / 365)} ${unitKo[r.unit] || r.unit}</td><td class="num">${parCell(r)}</td><td class="small muted">${esc(short(r.note, 60))}</td></tr>`)
   .join('');
 
 const seasonRows = withPkg
@@ -162,6 +163,7 @@ const html = `<!doctype html>
   tr { page-break-inside: avoid; }
   th, td { text-align:left; vertical-align:top; padding:1.1mm 1.8mm; border-bottom:1px solid var(--line); }
   th.note, td.note { width:44mm; }
+  table.dense { font-size:8.5pt; } table.dense th, table.dense td { padding:0.9mm 1.6mm; }
   th { font-size:8.5pt; color:var(--muted); background:var(--tint); border-bottom:1.5px solid var(--ink); }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
   td.lead { font-weight:700; white-space:nowrap; }
@@ -189,28 +191,26 @@ const html = `<!doctype html>
   <div class="kpi"><div class="v">${n0(totalCups)}잔</div><div class="l">12개월 음료 판매 (옵션 제외)</div></div>
   <div class="kpi"><div class="v">${withPkg.length}개</div><div class="l">소비량을 낱개 단위로 계산한 재고 품목</div></div>
   <div class="kpi"><div class="v">${noPkg.length}개</div><div class="l">포장 단위를 몰라 원재료 양만 계산한 품목</div></div>
-  <div class="kpi"><div class="v">${checklistCount}개</div><div class="l">비워 둔 값 (가정하지 않음 → 3장 확인 목록)</div></div>
+  <div class="kpi"><div class="v">${withPkg.filter((r) => r.assumed).length}개</div><div class="l">추정값으로 계산한 품목 (3장 목록에 현재 추정값 표시)</div></div>
 </div>
 
 <div class="callout">
   <div class="t">결론</div>
-  판매 자료와 레시피만으로 음료 재료 ${withPkg.length}개 품목의 소비 속도(낱개/일)를 <strong>세지 않고</strong> 얻을 수 있습니다. 포장 단위나 환산값을 모르는 ${noPkg.length}개는 가정하지 않고 원재료 양까지만 계산했으며, 3장 목록을 채워 주시면 마저 계산됩니다. 이 속도로 "지금쯤 몇 개"를 계산하면 앞서 제안한 예상 재고가
+  판매 자료와 레시피만으로 음료 재료 ${withPkg.length}개 품목의 소비 속도(낱개/일)를 <strong>세지 않고</strong> 얻을 수 있습니다. 그중 ${withPkg.filter((r) => r.assumed).length}개는 포장 크기 등을 <strong>추정값</strong>으로 계산했고(표에 "추정" 표시), 근거가 없는 ${noPkg.length}개는 원재료 양까지만 계산했습니다. 3장 목록의 값이 확인되는 대로 바꿉니다. 이 속도로 "지금쯤 몇 개"를 계산하면 앞서 제안한 예상 재고가
   기록을 쌓을 필요 없이 첫 주부터 작동하고, 기준 수량이 소비에 비해 너무 많거나 적은 품목(3장)도 바로 보입니다.
   매달 POS에서 이 보고서 한 장을 내보내 앱에 넣는 것이 유일한 새 습관입니다.
 </div>
 
 <h3>계산 방법</h3>
-<p>상품별 월 판매 잔 수 × 레시피 사용량(레시피에 인쇄된 g·ml·봉 수) = 재료 소비량. 이것을 레시피 구매 정보에 적힌 포장 크기로 나눠 <strong>낱개 수</strong>로 바꿨습니다.
-자료에 없는 값(시럽 병의 g, 1샷 원두 g, 청 1단지 무게, 가니쉬 1포장 개수 등)은 <strong>가정하지 않고 비워 두었습니다</strong>. 그런 품목은 원재료 양(g·샷·개)만 나오며, 3장 목록을 채워 주시면 낱개로 바뀝니다.
-"샷 추가"는 1샷, 에스프레소 단품은 싱글 1샷·더블 2샷으로 세었습니다(확인 목록). 원두는 시트처럼 일반·디카페인을 합쳐 두고 디카페인 잔 수만큼을 따로 표시했습니다. 레시피가 없는 메뉴는 잔 수만 세고 재료는 계산하지 않았습니다. 빵·디저트·쇼케이스·진동벨 그룹은 제외했습니다.</p>
+<p>상품별 월 판매 잔 수 × 레시피에 인쇄된 사용량 = 재료 소비량 → 구매표의 포장 크기로 나눠 <strong>낱개 수</strong>. 자료에 없는 값(시럽 병의 g, 1샷 원두 g, 청 1단지 무게, 티백 봉 수 등)은 따로 둔 <strong>추정값 층</strong>으로 계산하고 "추정"으로 표시했습니다. 근거가 없어 추정하지 않은 값(탄산수 병 용량, 원물 1포장 양 등)은 원재료 양만 나옵니다. 3장에 지금 쓰는 추정값을 적었으니 틀린 것만 고쳐 주시면 됩니다. 원두는 시트처럼 일반·디카페인을 합쳐 두었고, 레시피가 없는 메뉴는 잔 수만 셌으며, 빵·디저트·쇼케이스·진동벨 그룹은 제외했습니다.</p>
 
-<figure>${barChart(months, cups, { label: '월별 음료 판매 잔 수' })}<figcaption>월별 음료 판매 잔 수 (커피·티·에이드·라떼·주스, 옵션 제외)</figcaption></figure>
-<figure>${shareChart(months, ice, hot)}<figcaption>레시피가 있는 메뉴의 아이스·핫 비중. 여름엔 탄산수·청·얼음이, 겨울엔 대추·생강·스팀우유가 늘어납니다.</figcaption></figure>
+<figure>${barChart(months, cups, { label: '월별 음료 판매 잔 수', h: 150 })}<figcaption>월별 음료 판매 잔 수 (커피·티·에이드·라떼·주스, 옵션 제외)</figcaption></figure>
+<figure>${shareChart(months, ice, hot, { h: 130 })}<figcaption>레시피가 있는 메뉴의 아이스·핫 비중. 여름엔 탄산수·청·얼음이, 겨울엔 대추·생강·스팀우유가 늘어납니다.</figcaption></figure>
 
 <section class="section">
 <h2><span class="num">1</span>품목별 소비량과 기준 수량 비교</h2>
 <p class="small muted">연간 낱개 = 12개월 소비량 ÷ 1포장. 일평균은 판매가 있던 달의 평균, 최대월은 가장 많이 쓴 달의 일평균. "커버 일수" = 시트 기준 수량이 최대월 소비로 며칠을 버티는지. 제안 = 최대월 소비 × (3일 / 4일) × 1.5. 빨강 = 4일 미만(월·목 사이를 못 버팀), 주황 = 30일 초과(과다 재고 가능).</p>
-<table>
+<table class="dense">
 <thead><tr><th>품목</th><th class="num">연간 낱개</th><th class="num">일평균</th><th class="num">최대월</th><th class="num">시트 기준</th><th class="num">커버 일수</th><th class="num">제안 월→목 / 목→월</th><th class="note">포장 근거</th></tr></thead>
 <tbody>${rowsHtml}</tbody>
 </table>
@@ -239,21 +239,20 @@ ${noaMerged ? `<p class="small muted">노아주스는 POS에 종류가 없어 �
 
 <section class="section">
 <h2><span class="num">3</span>확인 목록 — 비워 둔 값</h2>
-<p>자료(레시피·구매표·재고 시트)에 없는 값은 가정하지 않고 비워 두었습니다. 아래 값을 알려 주시면 해당 품목의 낱개 소비량과 예상 재고가 바로 계산됩니다. (같은 목록을 채워 보내실 수 있게 별도 PDF로도 드립니다.)</p>
+<p>자료(레시피·구매표·재고 시트)에 없는 값입니다. "지금 쓰는 추정값"이 있는 항목은 그 값으로 계산 중이니 틀린 것만 고쳐 주시면 되고, 비어 있는 항목은 값을 주시면 계산에 들어갑니다. (같은 목록을 채워 보내실 수 있게 별도 PDF로도 드립니다.)</p>
 ${checklist
   .map(
     (sec) => `<h3>${esc(sec.title)}</h3>
 <table>
-<thead><tr><th style="width:38mm">${esc(sec.head[0])}</th><th>${esc(sec.head[1])}</th><th style="width:34mm">${esc(sec.head[2])}</th></tr></thead>
-<tbody>${sec.rows.map((r) => `<tr><td class="lead" style="white-space:normal">${esc(r[0])}</td><td>${esc(r[1])}</td><td class="small muted">${esc(r[2])}</td></tr>`).join('')}</tbody>
+<thead><tr><th style="width:34mm">${esc(sec.head[0])}</th><th>${esc(sec.head[1])}</th><th style="width:30mm">${esc(sec.head[2])}</th><th style="width:34mm">지금 쓰는 추정값</th></tr></thead>
+<tbody>${sec.rows.map((r) => `<tr><td class="lead" style="white-space:normal">${esc(r[0])}</td><td>${esc(r[1])}</td><td class="small muted">${esc(r[2])}</td><td class="small">${esc(r[3] || '')}</td></tr>`).join('')}</tbody>
 </table>`,
   )
   .join('')}
 <p class="small muted">재료 계산에서 뺀 것 — 옵션·호출 ${ignoredList.filter((u) => !u.byGroup).length}개(${listHtml(ignoredList.filter((u) => !u.byGroup && u.total >= 100))} 등), 그룹째 제외 ${Object.entries(ignoredByGroup).map(([g, t]) => `${esc(g)} ${n0(t)}건`).join(' · ') || '없음'}. 레시피가 없어 뺀 메뉴: ${listHtml(noRecipe)}.</p>
 <p class="small muted">답이 오면 <code>src/data/pos-map.js</code>의 빈 값을 채우고 분석을 다시 돌립니다. 답이 없는 항목은 그대로 비워 둡니다.</p>
 
-</section>
-<section class="section">
+<div style="break-inside:avoid;page-break-inside:avoid;margin-top:8mm">
 <h2><span class="num">4</span>이 자료로 더 자동화되는 것</h2>
 <table>
 <thead><tr><th style="width:40mm">자동화</th><th>어떻게</th><th style="width:34mm">새로 필요한 습관</th></tr></thead>
@@ -266,6 +265,7 @@ ${checklist
 <tr><td class="lead">발주 초안</td><td>예상 재고와 기준으로 월·목 아침에 발주 초안이 준비됩니다. 재발주 카드는 여전히 안전망으로 유효합니다.</td><td>—</td></tr>
 </tbody>
 </table>
+</div>
 </section>
 </body></html>`;
 

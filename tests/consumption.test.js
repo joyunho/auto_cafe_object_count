@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { consumptionByIngredient, consumptionByItem, suggestParFromRate, seasonality, findRecipe, indexRecipes } from '../src/logic/consumption.js';
+import { applyEstimates } from '../src/data/pos-estimates.js';
 
 // 계산 검증용 가짜 레시피 (실제 레시피 수치가 아님)
 const recipes = [
@@ -138,4 +139,41 @@ test('suggestParFromRate & seasonality', () => {
   const s = seasonality({ '2026-01': 1, '2026-02': 3 }, ['2026-01', '2026-02']);
   assert.equal(s['2026-01'], 0.5);
   assert.equal(s['2026-02'], 1.5);
+});
+
+test('추정값 층: 덧씌운 항목은 assumed, 1잔당 양(perServing)으로 환산, 추정 레시피 추가', () => {
+  const recipes2 = [...recipes, { menu: '카푸치노', variant: 'ICE', ingredients: [{ name: '우유', qty: 100, unit: 'ml' }, { name: '시나몬가루', qty: 1, unit: 'serving' }] }];
+  const maps2 = { ...maps, INGREDIENT_MAP: { ...maps.INGREDIENT_MAP, '시나몬가루': { item: 'cinnamon', perPackage: null, unit: 'serving' } }, PRODUCT_MAP: { ...maps.PRODUCT_MAP, 'ice카푸치노': { menu: '카푸치노', variant: 'ICE' }, 'hot유자차': { menu: '유자차', variant: 'HOT' } } };
+  const sales2 = { months: ['2026-01'], products: { 'ice카푸치노': { group: '커피', byMonth: { '2026-01': 10 }, total: 10 }, 'hot유자차': { group: '티', byMonth: { '2026-01': 4 }, total: 4 } } };
+  const items2 = [...items, { id: 'cinnamon', name: '시나몬' }, { id: 'yuja', name: '유자청' }];
+  // 추정 없이: 시나몬은 잔 수만, 유자차는 레시피 없음
+  let r = consumptionByIngredient(sales2, recipes2, maps2);
+  let b = consumptionByItem(sales2.months, r.byIngredient, r.decafCups, maps2, items2).byItem;
+  assert.equal(b.cinnamon.unit, 'serving');
+  assert.equal(b.cinnamon.raw['2026-01'], 10);
+  assert.equal(r.unmapped.find((u) => u.product === 'hot유자차').reason, '레시피 없음: 유자차 HOT');
+  // 추정값 덧씌우기
+  const est = {
+    INGREDIENT_MAP: { '시나몬가루': { item: 'cinnamon', perPackage: 500, unit: 'g', perServing: 0.3, assumed: true, note: '추정: 1잔 0.3g' }, '유자청': { item: 'yuja', perPackage: 2200, unit: 'g' } },
+    PRODUCT_MAP: {},
+    MODIFIERS: {},
+    recipes: [{ menu: '유자차', variant: 'HOT', ingredients: [{ name: '유자청', qty: 45, unit: 'g' }], assumed: true, basis: '청귤차와 같게' }],
+  };
+  const merged = applyEstimates(maps2, recipes2, est);
+  assert.equal(merged.recipes.length, recipes2.length + 1);
+  r = consumptionByIngredient(sales2, merged.recipes, merged.maps);
+  b = consumptionByItem(sales2.months, r.byIngredient, r.decafCups, merged.maps, items2).byItem;
+  assert.equal(b.cinnamon.unit, 'g');
+  assert.ok(Math.abs(b.cinnamon.raw['2026-01'] - 3) < 1e-9); // 10잔 × 0.3g
+  assert.equal(b.cinnamon.assumed, true);
+  assert.equal(b.cinnamon.monthly['2026-01'], 3 / 500);
+  assert.equal(b.yuja.raw['2026-01'], 180); // 추정 레시피 4잔 × 45g
+  assert.equal(b.yuja.assumed, true); // 추정 레시피에서 온 양이면 추정 표시
+  assert.equal(b.milk.assumed, false); // 확정 자료만 쓴 품목은 그대로
+  assert.ok(!r.unmapped.some((u) => u.product === 'hot유자차'));
+  // copyOf: 다른 변형 레시피 복사
+  const m2 = applyEstimates(maps2, recipes2, { INGREDIENT_MAP: {}, PRODUCT_MAP: {}, MODIFIERS: {}, recipes: [{ menu: '카푸치노', variant: 'HOT', copyOf: 'ICE', assumed: true }] });
+  const hot = m2.recipes.find((x) => x.menu === '카푸치노' && x.variant === 'HOT');
+  assert.equal(hot.ingredients[0].name, '우유');
+  assert.equal(hot.assumed, true);
 });
