@@ -7,12 +7,16 @@ const recipes = [
   { menu: '바닐라라떼', variant: 'ICE', ingredients: [{ name: '우유', qty: 150, unit: 'ml' }, { name: '바닐라시럽', qty: 30, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
   { menu: '바닐라라떼', variant: 'HOT', ingredients: [{ name: '스팀우유', qty: 200, unit: 'ml' }, { name: '바닐라시럽', qty: 30, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
   { menu: '티백 캐모마일', variant: 'HOT', ingredients: [{ name: '티백 캐모마일', qty: 1, unit: 'bag' }] },
+  { menu: '티백 캐모마일', variant: 'ICE', ingredients: [{ name: '티백 캐모마일', qty: 1, unit: 'bag' }] },
 ];
 const maps = {
   PRODUCT_MAP: {
     'ice바닐라라떼': { menu: '바닐라라떼', variant: 'ICE' },
     'hot바닐라라떼': { menu: '바닐라라떼', variant: 'HOT' },
-    'ice로얄캐모마일': { menu: '티백 캐모마일', variant: 'ICE' }, // ICE 레시피 없음 → HOT 사용
+    'ice로얄캐모마일': { menu: '티백 캐모마일', variant: 'ICE' },
+    '대추차 ice': { menu: '대추차', variant: 'ICE' }, // ICE 레시피 없음 → 레시피 없음으로 남아야 함
+    '노아주스 x': { unknown: '종류 불명' },
+    '브런치어린이': { brunchKids: 1 },
     '샷 추가': { modifier: 'shot', shots: 1 },
     '디카페인': { modifier: 'decaf' },
     '에비앙': { item: 'evian', qty: 1 },
@@ -49,14 +53,18 @@ const sales = {
     '소금빵': { group: '빵', byMonth: { '2026-01': 999 }, total: 999 },
     '진동벨 1번': { group: '진동벨', byMonth: { '2026-01': 5 }, total: 5 },
     '연하게': { group: '커피', byMonth: { '2026-01': 50 }, total: 50 },
+    '대추차 ice': { group: '티', byMonth: { '2026-01': 6 }, total: 6 },
+    '노아주스 x': { group: '주스/병음료', byMonth: { '2026-01': 9 }, total: 9 },
+    '브런치어린이': { group: '브런치', byMonth: { '2026-01': 4 }, total: 4 },
     '수상한메뉴': { group: '커피', byMonth: { '2026-01': 3 }, total: 3 },
     '모르는상품': { group: '커피', byMonth: { '2026-01': 2 }, total: 2 },
   },
 };
 
-test('findRecipe: 변형이 없으면 있는 쪽으로', () => {
+test('findRecipe: 정확히 같은 메뉴·변형만 (다른 변형으로 대체하지 않음)', () => {
   const idx = indexRecipes(recipes);
-  assert.equal(findRecipe(idx, '티백 캐모마일', 'ICE').variant, 'HOT');
+  assert.equal(findRecipe(idx, '티백 캐모마일', 'ICE').variant, 'ICE');
+  assert.equal(findRecipe(idx, '바닐라라떼', 'ANY'), null);
   assert.equal(findRecipe(idx, '없음', 'ICE'), null);
 });
 
@@ -74,8 +82,11 @@ test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시
   assert.equal(byIngredient['@item:noa-b'].months['2026-02'], 4);
   assert.equal(byIngredient['에스프레소샷'].months['2026-02'], 50 + 10);
   assert.equal(decafCups['2026-01'], 30);
-  assert.deepEqual(unmapped.map((u) => u.product).sort(), ['모르는상품', '수상한메뉴']);
-  assert.equal(unmapped.find((u) => u.product === '수상한메뉴').reason, '레시피 없음: 없는메뉴');
+  assert.deepEqual(unmapped.map((u) => u.product).sort(), ['노아주스 x', '대추차 ice', '모르는상품', '수상한메뉴']);
+  assert.equal(unmapped.find((u) => u.product === '수상한메뉴').reason, '레시피 없음: 없는메뉴 ICE');
+  assert.equal(unmapped.find((u) => u.product === '대추차 ice').reason, '레시피 없음: 대추차 ICE');
+  assert.equal(unmapped.find((u) => u.product === '노아주스 x').reason, '종류 불명');
+  assert.equal(byIngredient['@brunch-kids'].months['2026-01'], 4);
   // null로 연결한 옵션은 ignored에 잔 수와 함께 남는다 (무시 그룹은 아예 안 나옴)
   assert.deepEqual(ignored.map((u) => `${u.product}:${u.total}`).sort(), ['연하게:50', '진동벨 1번:5']);
   assert.ok(!('소금빵' in byIngredient));
@@ -107,6 +118,16 @@ test('consumptionByItem: 포장 단위 환산, 밀도, 원두 분리, 일평균'
   assert.ok(Math.abs(byItem['chamomile'].perDay['2026-01'] - 2 / 31) < 1e-9);
   assert.ok(byItem['chamomile'].avgPerDay > 0);
   assert.equal(byItem['chamomile'].totalUnits, 2);
+});
+
+test('consumptionByItem: 1샷 원두 g을 모르면 샷 수로 집계', () => {
+  const m2 = { ...maps, INGREDIENT_MAP: { ...maps.INGREDIENT_MAP, '에스프레소샷': { item: 'beans', perShotG: null, perPackage: null, unit: 'shot' } } };
+  const { byIngredient, decafCups } = consumptionByIngredient(sales, recipes, m2);
+  const { byItem } = consumptionByItem(sales.months, byIngredient, decafCups, m2, items);
+  assert.equal(byItem['beans'].unit, 'shot');
+  assert.equal(byItem['beans'].raw['2026-01'], 130);
+  assert.equal(byItem['beans'].decafRaw['2026-01'], 30);
+  assert.equal(byItem['beans'].totalUnits, null);
 });
 
 test('suggestParFromRate & seasonality', () => {
