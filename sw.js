@@ -14,6 +14,7 @@ const SHELL = [
   './src/logic/order.js',
   './src/logic/stats.js',
   './src/logic/match.js',
+  './src/logic/forecast.js',
   './src/ai/extract.js',
   './src/ui/html.js',
   './src/ui/count.js',

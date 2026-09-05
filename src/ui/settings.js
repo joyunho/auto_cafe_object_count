@@ -1,6 +1,7 @@
 // 설정 탭: 매장 정보, 발주 요일, API 키, 백업/복원
 import { esc } from './html.js';
-import { exportJSON, importJSON, defaultState, keepSafetyCopy, loadSafetyCopy } from '../store.js';
+import { exportJSON, importJSON, defaultState, keepSafetyCopy, loadSafetyCopy, builtinModel } from '../store.js';
+import { validateModel } from '../logic/forecast.js';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -30,6 +31,20 @@ export function render(s) {
           <option value="sheet" ${st.photoMode === 'sheet' ? 'selected' : ''}>손글씨 재고 시트 사진 읽기</option>
           <option value="shelf" ${st.photoMode === 'shelf' ? 'selected' : ''}>선반/냉장고 실물 사진에서 개수 세기</option>
         </select></div>
+    </section>
+
+    <section class="card">
+      <h2>판매 자료 소비 모델 (예상 재고)</h2>
+      ${
+        s.consumption
+          ? `<p class="small" style="margin-bottom:6px"><span class="pill ok">사용 중</span> ${esc(s.consumption.source || '소비 모델')} · 품목 ${Object.keys(s.consumption.items).length}개${s.consumption.months?.length ? ` · ${esc(s.consumption.months[0])}~${esc(s.consumption.months.at(-1))}` : ''}</p>
+             <p class="tiny muted">재고조사 탭에 품목별 예상 재고와 "확인 필요" 표시가 나옵니다. 확정한 재고조사가 최소 1회 있어야 계산됩니다.</p>`
+          : `<p class="small muted">POS 판매 자료 × 레시피로 만든 소비 모델(JSON)을 넣으면 재고조사 탭에 "지금쯤 몇 개"가 미리 채워집니다. 만드는 방법은 README의 "판매 자료 분석" 참고.</p>`
+      }
+      <div class="row wrap">
+        <label class="btn">📈 소비 모델 불러오기 <input type="file" accept="application/json,.json" data-change="model-import" class="sr-only" /></label>
+        ${s.consumption ? `<button type="button" class="btn ghost" data-action="model-clear">모델 지우기</button>` : ''}
+      </div>
     </section>
 
     <section class="card">
@@ -91,6 +106,24 @@ export async function downloadBackup(app, text) {
 }
 
 export const changes = {
+  'model-import'(el, e, app) {
+    const file = el.files?.[0];
+    if (!file) return;
+    file.text().then((text) => {
+      let model;
+      try {
+        model = validateModel(JSON.parse(text));
+      } catch (err) {
+        app.toast(err?.message || '소비 모델 파일을 읽을 수 없습니다', 3000);
+        el.value = '';
+        return;
+      }
+      app.update((s) => {
+        s.consumption = model;
+      });
+      app.toast(`소비 모델을 불러왔습니다 (품목 ${Object.keys(model.items).length}개)`);
+    });
+  },
   setting(el, e, app) {
     app.set((s) => {
       s.settings[el.dataset.key] = el.value.trim();
@@ -135,6 +168,12 @@ export const changes = {
 };
 
 export const actions = {
+  'model-clear'(el, e, app) {
+    if (!confirm('소비 모델을 지울까요? 예상 재고 표시가 사라집니다.')) return;
+    app.update((s) => {
+      s.consumption = null;
+    });
+  },
   'apikey-toggle'(el) {
     const input = document.getElementById('api-key-input');
     input.type = input.type === 'password' ? 'text' : 'password';

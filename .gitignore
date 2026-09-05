@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 docs/proposal/fonts/*.ttf
+# 매출 자료와 그로부터 만든 보고서·소비 모델은 공개 저장소에 올리지 않는다
+/data/
+/docs/analysis/
+/docs/판매데이터-소비량-분석.pdf

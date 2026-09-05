@@ -10,9 +10,20 @@ export function uid(prefix = '') {
   return `${prefix}${Date.now().toString(36)}${rand}`;
 }
 
+/** 단일 파일 빌드가 window.__CONSUMPTION_MODEL__ 로 심어 둔 소비 모델(있으면) */
+export function builtinModel() {
+  try {
+    const m = typeof window !== 'undefined' ? window.__CONSUMPTION_MODEL__ : null;
+    return m && typeof m === 'object' && m.items ? m : null;
+  } catch {
+    return null;
+  }
+}
+
 export function defaultState() {
   return {
     version: SCHEMA_VERSION,
+    consumption: builtinModel(),
     items: SEED_ITEMS.map((it) => ({ ...it })),
     groups: SEED_GROUPS.map((g) => ({ ...g })),
     sessions: [],
@@ -74,6 +85,7 @@ export function migrate(raw) {
     if (typeof state.settings[k] !== 'string') state.settings[k] = SEED_SETTINGS[k];
   }
   if (state.settings.photoMode !== 'shelf') state.settings.photoMode = 'sheet';
+  if (!isObj(state.consumption) || !isObj(state.consumption.items)) state.consumption = builtinModel();
   state.version = SCHEMA_VERSION;
   return state;
 }
