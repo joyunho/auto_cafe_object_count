@@ -106,7 +106,10 @@ export function consumptionByIngredient(sales, recipes, maps) {
         add('@ramen', 'ea', month, qty * map.ramen);
         continue;
       }
-      for (const ing of recipe.ingredients) add(ing.name, ing.unit, month, qty * ing.qty);
+      for (const ing of recipe.ingredients) {
+        add(ing.name, ing.unit, month, qty * ing.qty);
+        if (recipe.assumed) by[ing.name].assumed = true; // 추정 레시피에서 온 양
+      }
       if (map.decaf) decafCups[month] = (decafCups[month] || 0) + qty;
     }
   }
@@ -166,6 +169,7 @@ export function consumptionByItem(months, byIngredient, decafCups, maps, items) 
       // 시트에는 "원두 / 디카페인 원두"가 한 줄이라 합쳐서 기록하고, 디카페인 잔 수만큼은 decafRaw로 따로 적어 둔다.
       const gPerShot = map.perShotG || null;
       const r = rec(map.item, { ...map, unit: gPerShot ? 'g' : 'shot' });
+      if (map.assumed) r.assumed = true;
       r.decafRaw ||= {};
       for (const [m, shots] of Object.entries(e.months)) {
         const decaf = Math.min(shots, decafCups[m] || 0);
@@ -178,8 +182,12 @@ export function consumptionByItem(months, byIngredient, decafCups, maps, items) 
     }
 
     const r = rec(map.item, map);
+    if (map.assumed || e.assumed) r.assumed = true; // 추정값이 하나라도 섞이면 품목 전체를 추정으로 표시
+    if (map.assumed && map.note && !r.note.includes(map.note)) r.note = r.note ? `${r.note} · ${map.note}` : map.note;
     for (const [m, q] of Object.entries(e.months)) {
       let v = q;
+      // 레시피에 수량이 없어 "1잔"으로만 센 재료: 1잔당 양(추정)이 있으면 그 단위로
+      if (e.unit === 'serving' && map.perServing != null) v = v * map.perServing;
       if (map.milkShare) v *= map.milkShare; // 크림우유 중 우유 비중
       // 레시피 g ↔ 포장 ml 환산
       if (e.unit === 'g' && map.unit === 'ml' && map.density) v = v / map.density;

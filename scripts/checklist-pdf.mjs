@@ -32,28 +32,29 @@ const html = `<!doctype html>
   th { font-size:8pt; color:var(--muted); background:var(--tint); border-bottom:1.5px solid var(--ink); }
   td.no { width:7mm; color:var(--muted); font-variant-numeric:tabular-nums; }
   td.lead { width:34mm; font-weight:700; }
-  td.now { width:30mm; font-size:8pt; color:var(--muted); }
-  td.ans { width:38mm; }
+  td.now { width:26mm; font-size:8pt; color:var(--muted); }
+  td.est { width:34mm; font-size:8pt; }
+  td.ans { width:30mm; }
   td.ans .box { border:1px solid #9aa1a8; border-radius:1.5mm; height:8mm; background:#fff; }
   .eyebrow { font-size:8pt; letter-spacing:.12em; color:var(--muted); text-transform:uppercase; }
   .note { border-left:3px solid var(--red); background:#fbe9e9; padding:2.5mm 3.5mm; border-radius:0 2mm 2mm 0; margin:3mm 0 4mm; }
 </style></head><body>
 <div class="eyebrow">카페 재고관리 · 확인 목록 · 2026년 9월</div>
 <h1>채워 주실 값 목록</h1>
-<p class="muted">판매 자료 × 레시피로 재고 소비량을 계산하면서, 자료에 없는 값은 <strong>가정하지 않고 비워 두었습니다</strong>. 아는 것만 채워 주시면 됩니다. 모르는 칸은 비워 두셔도 되고, 그 품목은 계속 원재료 양(g·샷·개)으로만 표시됩니다.</p>
+<p class="muted">판매 자료 × 레시피로 재고 소비량을 계산하면서 자료에 없던 값입니다. 계산은 "지금 쓰는 추정값"으로 진행 중이며, 그 품목은 보고서와 앱에 <strong>추정</strong>으로 표시됩니다. <strong>틀린 것만</strong> 실제 값을 적어 주시면 됩니다. "추정 안 함"인 항목은 값을 주시면 그때 계산에 들어갑니다.</p>
 <div class="note"><strong>쓰는 법</strong> — 포장에 적힌 값(용량·무게·개수)을 그대로 적어 주세요. 사진으로 찍어 보내 주셔도 됩니다. "지금 집계된 양"은 지난 12개월 판매로 계산한 사용량이며 참고용입니다.</div>
 ${sections
   .map(
     (sec) => `<h2>${esc(sec.title)}</h2>
 <table>
-<thead><tr><th></th><th>${esc(sec.head[0])}</th><th>${esc(sec.head[1])}</th><th>${esc(sec.head[2] || '')}</th><th>답</th></tr></thead>
+<thead><tr><th></th><th>${esc(sec.head[0])}</th><th>${esc(sec.head[1])}</th><th>${esc(sec.head[2] || '')}</th><th>지금 쓰는 추정값</th><th>실제 값 (틀린 것만)</th></tr></thead>
 <tbody>${sec.rows
-  .map((r) => `<tr><td class="no">${++no}</td><td class="lead">${esc(r[0])}</td><td>${esc(r[1])}</td><td class="now">${esc(r[2])}</td><td class="ans"><div class="box"></div></td></tr>`)
+  .map((r) => `<tr><td class="no">${++no}</td><td class="lead">${esc(r[0])}</td><td>${esc(r[1])}</td><td class="now">${esc(r[2])}</td><td class="est">${esc(r[3] || '')}</td><td class="ans"><div class="box"></div></td></tr>`)
   .join('')}</tbody>
 </table>`,
   )
   .join('')}
-<p class="small muted">총 ${no}개 항목. 답을 주시면 연결표(src/data/pos-map.js)에 값을 넣고 분석과 앱의 예상 재고를 다시 계산합니다.</p>
+<p class="small muted">총 ${no}개 항목. 답을 주시면 확정 연결표(src/data/pos-map.js)에 값을 넣고 추정값(src/data/pos-estimates.js)에서 지운 뒤, 분석과 앱의 예상 재고를 다시 계산합니다.</p>
 </body></html>`;
 fs.writeFileSync(path.join(outDir, 'checklist.html'), html);
 console.log(`docs/analysis/checklist.html (${no} items)`);

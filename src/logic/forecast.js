@@ -109,7 +109,7 @@ export function forecastItem(item, model, sessions, orders, today) {
   const crossesZero = expectedRaw - band < 0;
   const stale = days > STALE_DAYS;
   const needsCheck = qtyLow !== qtyHigh || qtyExp !== qtyLow || crossesZero || stale;
-  return { expected, low, high, days, ratePerDay: (rate ?? 0) * perCount, basis, needsCheck, crossesZero, stale, qtyLow, qtyHigh };
+  return { expected, low, high, days, ratePerDay: (rate ?? 0) * perCount, basis, needsCheck, crossesZero, stale, qtyLow, qtyHigh, estimated: !!model.items[item.id].estimated };
 }
 
 /** 모든 활성 품목의 예상값 */
@@ -133,7 +133,7 @@ export function validateModel(obj) {
     for (const [k, n] of Object.entries(v.perDay || {})) if (/^\d{4}-\d{2}$/.test(k) && Number.isFinite(n) && n >= 0) perDay[k] = n;
     const avg = Number.isFinite(v.avgPerDay) && v.avgPerDay >= 0 ? v.avgPerDay : Object.values(perDay).length ? Object.values(perDay).reduce((a, b) => a + b, 0) / Object.values(perDay).length : null;
     if (avg == null) continue;
-    items[id] = { perDay, avgPerDay: avg };
+    items[id] = { perDay, avgPerDay: avg, estimated: !!(v.estimated || v.assumed) };
   }
   if (!Object.keys(items).length) throw new Error('소비 모델에 품목이 없습니다');
   return { version: obj.version || 1, source: typeof obj.source === 'string' ? obj.source : '', months: Array.isArray(obj.months) ? obj.months : [], items };
