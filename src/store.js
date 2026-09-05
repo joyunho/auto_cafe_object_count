@@ -10,9 +10,20 @@ export function uid(prefix = '') {
   return `${prefix}${Date.now().toString(36)}${rand}`;
 }
 
+/** 단일 파일 빌드가 window.__CONSUMPTION_MODEL__ 로 심어 둔 소비 모델(있으면) */
+export function builtinModel() {
+  try {
+    const m = typeof window !== 'undefined' ? window.__CONSUMPTION_MODEL__ : null;
+    return m && typeof m === 'object' && m.items ? m : null;
+  } catch {
+    return null;
+  }
+}
+
 export function defaultState() {
   return {
     version: SCHEMA_VERSION,
+    consumption: builtinModel(),
     items: SEED_ITEMS.map((it) => ({ ...it })),
     groups: SEED_GROUPS.map((g) => ({ ...g })),
     sessions: [],
@@ -64,6 +75,7 @@ export function migrate(raw) {
       status: s.status === 'submitted' ? 'submitted' : 'draft',
       counts: isObj(s.counts) ? s.counts : {},
       overrides: isObj(s.overrides) ? s.overrides : {},
+      filled: isObj(s.filled) ? s.filled : {}, // 예상값·기준값으로 채운 품목 (실측 아님)
     }));
   state.orders = objList(state.orders)
     .filter((o) => typeof o.id === 'string')
@@ -74,6 +86,9 @@ export function migrate(raw) {
     if (typeof state.settings[k] !== 'string') state.settings[k] = SEED_SETTINGS[k];
   }
   if (state.settings.photoMode !== 'shelf') state.settings.photoMode = 'sheet';
+  // 소비 모델: 없으면 내장 모델(단일 파일 빌드) 또는 null. 사용자가 지운 것(false)은 그대로 둔다.
+  if (!('consumption' in raw)) state.consumption = builtinModel();
+  else if (state.consumption !== false && (!isObj(state.consumption) || !isObj(state.consumption.items))) state.consumption = builtinModel();
   state.version = SCHEMA_VERSION;
   return state;
 }

@@ -99,6 +99,24 @@ ANTHROPIC_API_KEY=sk-ant-... node scripts/extract-from-photo.mjs --mode sheet �
 - 홈 화면 앱과 브라우저 탭을 동시에 열어도 한쪽에서 저장한 내용이 다른 쪽에 반영됩니다.
 - 여러 명이 동시에 같은 데이터를 편집하는 기능(실시간 동기화)은 아직 없습니다. 필요하면 다음 단계로 간단한 서버 또는 스프레드시트 연동을 붙일 수 있습니다.
 
+## 판매 자료 분석 (POS × 레시피 → 소비량 · 예상 재고)
+
+POS의 "그룹별 매출분석" 월별 보고서(PDF)와 메뉴 레시피가 있으면, 세지 않고도 재고 품목별 소비 속도를 계산해
+재고조사 탭에 **예상 재고**와 **확인 필요** 표시를 띄울 수 있습니다.
+
+```bash
+# 1) 보고서 PDF에서 텍스트 추출 (pypdfium2 등) → data/pos/1월.txt … , 레시피 텍스트 → data/pos/recipe.txt
+# 2) 레시피 구조화 JSON → data/recipes.json  (scripts/build-recipes.mjs <structured.json>)
+node scripts/pos-analysis.mjs        # data/analysis.json, data/consumption.json 생성 + 요약 출력
+node scripts/pos-report.mjs          # docs/analysis/index.html 보고서 (매출 금액 없음)
+node scripts/make-pdf.mjs docs/analysis/index.html "docs/판매데이터-소비량-분석.pdf"
+```
+
+- `data/`(매출 자료·소비 모델)와 생성된 보고서(`docs/analysis/`, PDF)는 **저장소에 올리지 않습니다**(.gitignore). 공개 저장소이기 때문입니다. 보고서는 위 명령으로 언제든 다시 만들 수 있습니다.
+- `data/consumption.json`이 있으면 `npm run build`가 단일 파일 빌드에 소비 모델을 심습니다(비공개 배포용). GitHub Pages 배포판에서는 설정 탭 → "소비 모델 불러오기"로 같은 파일을 넣습니다.
+- 연결표: `src/data/pos-map.js` (POS 상품명 → 레시피 메뉴·에스프레소 단품·옵션·병음료, 레시피 재료 → 재고 품목 + 1포장 크기). 포장 크기를 가정한 항목은 `assumed: true`, 포장 단위를 모르는 항목은 `perPackage: null`(원재료 양만 계산, 앱 예상 재고에서는 제외)로 표시되어 있으니 실제 값으로 고치세요.
+- 예상 재고 = 마지막 확정 조사값 + 그 뒤 발주 입고 − 소비 속도(그 달) × 경과일. 예상값의 오차 범위 안에서 발주량이 달라지면 "확인 필요"로 표시합니다 (`src/logic/forecast.js`).
+
 ## 개발
 
 ```
@@ -110,6 +128,10 @@ src/logic/order.js    발주 수량 계산, 발주 문자 생성
 src/logic/stats.js    소비량 추정, 기준 수량 제안
 src/logic/match.js    인식된 이름 ↔ 품목 매칭
 src/ai/extract.js     Claude 비전 호출 (프롬프트·스키마·파싱)
+src/logic/pos.js      POS 매출 보고서 텍스트 파서
+src/logic/consumption.js 판매량 × 레시피 → 재료·품목 소비량
+src/logic/forecast.js 예상 재고 · 확인 필요 판정
+src/data/pos-map.js   POS 상품 ↔ 레시피 ↔ 재고 품목 연결표
 src/ui/*.js           탭별 화면 (count, order, history, items, settings, photo)
 sw.js                 오프라인 캐시
 tests/                node --test 단위 테스트

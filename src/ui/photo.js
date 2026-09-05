@@ -213,6 +213,7 @@ export const actions = {
         if (m.unit === 'box' && it.countUnit !== 'box') v = toEach(it, raw, 'box');
         else if (m.unit === 'ea' && it.countUnit === 'box') v = raw / it.boxSize;
         sess.counts[m.itemId] = Math.max(0, Math.round(v));
+        if (sess.filled) delete sess.filled[m.itemId];
         if (sess.overrides) delete sess.overrides[m.itemId];
         applied++;
       }

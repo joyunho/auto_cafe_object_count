@@ -220,14 +220,57 @@ try {
   const junkPath = path.join(OUT, 'junk.json');
   fs.writeFileSync(junkPath, '{"foo":"bar"}');
   await page.locator('input[data-change="backup-import"]').setInputFiles(junkPath);
-  await page.waitForSelector('.toast');
-  assert.match(await page.locator('.toast').textContent(), /백업 파일이 아니거나/);
+  // 초기화 토스트("초기화했습니다")가 아직 떠 있을 수 있으므로 거부 메시지가 나올 때까지 기다린다
+  await page.locator('.toast', { hasText: '백업 파일이 아니거나' }).waitFor({ timeout: 5000 });
   assert.equal((await state()).orders.length, 0);
   await page.locator('input[data-change="backup-import"]').setInputFiles(backupPath);
   await page.waitForFunction(() => window.__cafeApp.state.orders.length === 1);
   assert.equal((await state()).settings.storeName, '테스트점');
   assert.ok(await page.locator('[data-action="backup-undo"]').count() === 1, '되돌리기 버튼 표시');
   log('백업 내보내기 · 초기화 · 잘못된 파일 거부 · 불러오기');
+
+  // 13b. 소비 모델 불러오기 → 예상 재고와 확인 필요 표시
+  const modelPath = path.join(OUT, 'model.json');
+  fs.writeFileSync(modelPath, JSON.stringify({ version: 1, source: 'e2e 모델', months: ['2026-01'], items: { 'sparkling-water': { perDay: { '2026-01': 1 }, avgPerDay: 1 }, 'yuja-cheong': { perDay: {}, avgPerDay: 0.01 } } }));
+  await page.locator('input[data-change="model-import"]').setInputFiles(modelPath);
+  await page.waitForFunction(() => !!window.__cafeApp.state.consumption);
+  assert.match(await page.locator('main').textContent(), /사용 중/);
+  await page.locator('.tabbar [data-tab="count"]').click();
+  await page.waitForSelector('#progress-text');
+  // 백업 복원으로 오늘 확정한 기록(탄산수 4개)과 그 발주(4개 입고)가 있으므로 예상값 = 4 + 4 = 8
+  assert.match(await page.locator('.item-row[data-row="sparkling-water"] .meta').textContent(), /예상 8개/);
+  assert.ok((await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val]').count()) >= 3, '예상(N) 버튼');
+  // 지난 수량으로 시작한 초안이라 이미 값이 있음 → 지운 뒤 "예상값 채우기"
+  await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val=""]').click();
+  await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] == null);
+  await page.locator('[data-action="count-fill-forecast"]').click();
+  await page.locator('.toast', { hasText: '예상값으로 채웠습니다' }).waitFor({ timeout: 5000 });
+  assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().counts['sparkling-water']), 8);
+  assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().filled['sparkling-water']), true, '채운 값은 실측 아님으로 표시');
+  // 직접 고치면 실측으로 바뀐다
+  await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val="0"]').click();
+  await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] === 0);
+  assert.equal(await page.evaluate(() => !!window.__cafeApp.activeSession().filled['sparkling-water']), false);
+  assert.match(await page.locator('.item-row[data-row="yuja-cheong"] .name').textContent(), /예상 OK|확인 필요/);
+  // 모델을 지우면 "확인 필요만 보기"가 켜져 있어도 품목이 사라지지 않는다
+  await page.locator('input[data-change="count-only-check"]').check();
+  await page.locator('.tabbar [data-tab="settings"]').click();
+  await page.locator('[data-action="model-clear"]').click(); // confirm은 위의 전역 dialog 핸들러가 수락
+  await page.waitForFunction(() => window.__cafeApp.state.consumption === false);
+  await page.reload();
+  await page.waitForSelector('main');
+  assert.equal(await page.evaluate(() => window.__cafeApp.state.consumption), false, '새로고침해도 지운 상태 유지');
+  await page.locator('.tabbar [data-tab="count"]').click();
+  await page.waitForSelector('#progress-text');
+  assert.ok((await page.locator('.item-row').count()) >= 60, '모델 없을 때 전체 품목 표시');
+  // 다시 불러오기 (뒤 단계에서 예상값 화면을 찍기 위해)
+  await page.locator('.tabbar [data-tab="settings"]').click();
+  await page.locator('input[data-change="model-import"]').setInputFiles(modelPath);
+  await page.waitForFunction(() => !!window.__cafeApp.state.consumption);
+  await page.locator('.tabbar [data-tab="count"]').click();
+  await page.waitForSelector('#progress-text');
+  await shot(page, 'count-forecast');
+  log('소비 모델 불러오기 · 예상 재고 · 예상값 채우기');
 
   // 14. 다크 모드 · 데스크톱
   await page.emulateMedia({ colorScheme: 'dark' });

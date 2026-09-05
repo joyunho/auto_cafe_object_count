@@ -26,6 +26,12 @@ const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const iconSvg = fs.readFileSync(path.join(root, 'icons', 'icon.svg'), 'utf8');
+// 판매 자료로 만든 소비 모델(data/consumption.json, 저장소에는 포함하지 않음)이 있으면 빌드에 심는다
+const modelPath = path.join(root, 'data', 'consumption.json');
+const modelScript = fs.existsSync(modelPath)
+  ? `<script>window.__CONSUMPTION_MODEL__ = ${JSON.stringify(JSON.parse(fs.readFileSync(modelPath, 'utf8'))).replace(/<\/script/gi, '<\\/script')};</script>\n`
+  : '';
+if (modelScript) console.log('소비 모델 포함: data/consumption.json');
 const iconHref = `data:image/svg+xml;base64,${Buffer.from(iconSvg).toString('base64')}`;
 
 const inner = `<title>씨앤비 발주 도우미</title>
@@ -35,7 +41,7 @@ ${css}
 </style>
 <div id="app"></div>
 <noscript>이 앱은 JavaScript가 필요합니다.</noscript>
-<script type="module">
+${modelScript}<script type="module">
 ${js}
 </script>`;
 
