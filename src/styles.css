@@ -21,6 +21,8 @@
   --shadow: 0 1px 2px rgba(20, 24, 28, 0.06), 0 4px 12px rgba(20, 24, 28, 0.04);
   --radius: 12px;
   --nav-h: 64px;
+  --topbar-h: 66px; /* .topbar 실측 높이 — 고정 요소의 top 기준 */
+  --chips-h: 52px; /* 재고조사 그룹 칩 줄 높이 (padding 포함) */
   --font: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif;
   color-scheme: light dark;
 }
@@ -324,7 +326,7 @@ button {
 
 .group-head {
   position: sticky;
-  top: 58px;
+  top: var(--topbar-h);
   z-index: 10;
   background: var(--bg);
   padding: 8px 0 6px;
@@ -394,17 +396,18 @@ button {
 }
 
 .stepper button {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 52px;
   border: 0;
   background: var(--surface-2);
   font-size: 20px;
   font-weight: 700;
+  touch-action: manipulation;
 }
 
 .stepper input {
-  width: 58px;
-  height: 42px;
+  width: 56px;
+  height: 52px;
   border: 0;
   text-align: center;
   font-size: 18px;
@@ -421,29 +424,31 @@ button {
 }
 
 .stepper input:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink); /* 빨강은 기준 숫자 전용 */
   outline-offset: -2px;
 }
 
-.stepper input.empty {
+.stepper input.blank {
   color: var(--muted);
 }
 
 .quick {
   display: flex;
-  gap: 4px;
-  margin-top: 6px;
+  flex-wrap: wrap;
+  gap: 6px;
   justify-content: flex-end;
+  grid-column: 1 / -1;
 }
 
 .quick button {
   border: 1px solid var(--line);
   background: transparent;
   border-radius: 8px;
-  font-size: 12px;
-  padding: 4px 8px;
+  font-size: 13px;
+  padding: 6px 10px;
   color: var(--muted);
-  min-height: 28px;
+  min-height: 36px;
+  touch-action: manipulation;
 }
 
 /* 발주 라인 */
@@ -679,7 +684,9 @@ details summary {
   padding: 6px 0;
 }
 
-.empty {
+.card.empty,
+.modal .empty,
+.item-list .empty {
   text-align: center;
   color: var(--muted);
   padding: 24px 8px;
@@ -735,8 +742,9 @@ details summary {
 .seg {
   display: flex;
   gap: 3px;
-  padding: 3px;
-  margin: 0 0 10px;
+  padding: 2px;
+  margin: 0 0 8px;
+  min-height: 36px;
   background: var(--surface-2);
   border-radius: 12px;
 }
@@ -744,8 +752,8 @@ details summary {
   flex: 1;
   border: 0;
   background: transparent;
-  border-radius: 9px;
-  min-height: 40px;
+  border-radius: 10px;
+  min-height: 32px;
   font-weight: 700;
   color: var(--muted);
 }
@@ -761,60 +769,225 @@ details summary {
 }
 
 /* ── 재고조사: 종이 시트처럼 이름 · 빨간 기준 · 검은 숫자만 ── */
+main[data-tab='count'] {
+  padding-top: 4px;
+}
 .card.compact {
   padding: 12px 14px;
 }
 .date-input {
-  min-height: 40px;
+  width: 130px;
+  height: 36px;
+  min-height: 36px;
+  font-size: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 4px 8px;
+  padding: 0 6px;
   background: var(--surface);
+  font-variant-numeric: tabular-nums;
 }
-.toolbar {
+
+/* 머리 카드: 제목·진행 | 날짜 | ⋯ 한 줄(36px), 아래에 진행 바 */
+.card.count-head {
+  padding: 4px 10px 0;
+  margin-bottom: 0; /* 아래 칩 줄이 자기 위아래 여백(6px)을 가진다 */
+}
+.count-head-row {
   display: flex;
+  align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  min-height: 36px;
 }
-.item-row .item-main {
+.count-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.25;
+}
+.count-head h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.count-head #progress-text {
+  display: block;
+  word-break: keep-all;
+  font-variant-numeric: tabular-nums;
+}
+.count-head .head-line {
+  margin: 6px 0 0;
+  gap: 6px;
+  line-height: 1.3;
+}
+.count-head label.head-line {
+  white-space: nowrap;
+}
+.count-head p.head-line {
+  overflow-wrap: anywhere;
+}
+.count-head .head-line .pill {
+  flex: 0 0 auto;
+}
+.count-head .head-line > .muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.count-head .progress {
+  margin: 4px -10px 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* ⋯ 메뉴: 자주 안 쓰는 도구는 접어 둔다 */
+.menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.menu > summary {
+  list-style: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu[open] > summary {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 12;
+  min-width: 260px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 4px rgba(20, 24, 28, 0.08), 0 12px 32px rgba(20, 24, 28, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-panel .btn {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  text-align: left;
+  border: 0;
+  white-space: normal;
+  font-weight: 500;
+}
+.menu-panel .btn:hover {
+  background: var(--surface-2);
+}
+
+/* 줄: 이름 | 빨간 기준 | − 숫자 + (기준 열 폭이 고정이라 숫자가 세로로 정렬된다) */
+#count-list .item-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  padding: 8px 10px;
+}
+#count-list .item-row .item-main {
   min-width: 0;
   cursor: pointer;
 }
-.item-row .item-ctl {
+#count-list .item-row .name {
+  font-size: 17px;
+  line-height: 1.3;
+}
+#count-list .item-row .item-ctl {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
 }
-.par-inline {
-  font-size: 12px;
+#count-list .item-row .par-col {
+  width: 62px;
+  flex: 0 0 auto;
+  text-align: right;
+  line-height: 1.2;
+}
+#count-list .par-col .par {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--par);
+  font-variant-numeric: tabular-nums;
+}
+#count-list .par-col .par.none {
   color: var(--muted);
+  font-weight: 600;
+}
+#count-list .par-col .par-sub {
+  display: block;
+  height: 14px;
+  line-height: 14px;
+  font-size: 11px;
   font-weight: 500;
-  margin-left: 4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
 }
-.par-inline .par {
-  font-size: 15px;
+#count-list .par-col .par-sub.order-hint {
+  color: var(--accent);
+  font-weight: 700;
 }
-/* 빠른 버튼은 숫자 칸을 누른 줄에만 펼친다 */
-.item-row .quick {
+#count-list .par-col .par-sub.check-hint {
+  color: var(--warn);
+  font-weight: 700;
+}
+/* 부가 정보와 빠른 버튼은 숫자 칸을 누른 줄에서만 (작게/크게 보기 공통) */
+#count-list .item-row .meta {
+  display: none;
+  word-break: keep-all;
+}
+#count-list .item-row.active .meta {
+  display: block;
+}
+#count-list .item-row .quick {
   display: none;
 }
-.item-row.active .quick {
+#count-list .item-row.active .quick {
   display: flex;
+}
+#count-list .group-head {
+  top: calc(var(--topbar-h) + var(--chips-h));
+  padding: 3px 0 2px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+#count-list + .btn.block {
+  margin-top: 4px;
 }
 .book-head {
   margin-top: 4px;
 }
 
-/* ── 그룹 진행 칩 ── */
+/* ── 그룹 칩: 상단에 붙어 다니는 그룹 이동 ── */
 .chips {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 11;
+  padding: 6px 0;
+  background: var(--bg);
+}
+/* 가로 스크롤과 오른쪽 끝 흐림은 안쪽 상자에 — 바깥 상자의 배경은 그대로 불투명해야 아래 내용이 비치지 않는다 */
+.chips-scroll {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 2px 0 8px;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 92%, transparent);
+  mask-image: linear-gradient(to right, #000 92%, transparent);
 }
-.chips::-webkit-scrollbar {
+.chips-scroll::-webkit-scrollbar {
   display: none;
 }
 .chip {
@@ -822,15 +995,17 @@ details summary {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 6px 12px;
+  font-size: 13px;
   color: var(--muted);
-  min-height: 32px;
+  min-height: 40px;
   white-space: nowrap;
+  touch-action: manipulation;
 }
 .chip b {
   color: var(--text);
   margin-left: 2px;
+  font-variant-numeric: tabular-nums;
 }
 .chip.part {
   border-color: var(--warn);
@@ -844,40 +1019,22 @@ details summary {
 .chip.done b {
   color: var(--ok);
 }
-.tiny-pill {
-  font-size: 11px;
-  padding: 1px 6px;
-}
-.order-pill:empty {
-  display: none;
-}
 
-/* ── 촘촘히 보기: 이름·기준·숫자만, 부가 정보는 누른 줄에서만 ── */
-.dense .item-row {
-  padding: 5px 10px;
+/* ── 작게 보기(기본): 줄 높이만 낮추고 스테퍼 폭은 크게 보기와 같게 ── */
+#count-list.dense .item-row {
+  padding: 5px 8px;
 }
-.dense .item-row .name {
+#count-list.dense .item-row .name {
   font-size: 15px;
 }
-.dense .item-row .meta {
-  display: none;
-}
-.dense .item-row.active .meta {
-  display: block;
-}
 .dense .stepper button {
-  width: 36px;
-  height: 36px;
+  height: 44px;
   font-size: 18px;
 }
 .dense .stepper input {
-  width: 52px;
-  height: 36px;
+  height: 44px;
   font-size: 17px;
 }
 .dense .group {
   margin-bottom: 10px;
-}
-.dense .group-head {
-  padding: 6px 0 4px;
 }

@@ -1,7 +1,7 @@
 // 장부(book): 재고를 따로 세는 묶음. 제품(음료 재료, 월·목 발주)과 자재(포장·컵·봉투 등 소모품, 수요일)를 나눈다.
 export const BOOKS = [
-  { id: 'product', title: '제품 · 재료', short: '제품', dayLabel: '월·목', orderDays: [1, 4], desc: '음료 재료 시트 3장 — 씨앤비 월·목 발주' },
-  { id: 'supply', title: '자재 · 소모품', short: '자재', dayLabel: '수', orderDays: [3], desc: '포장·컵·봉투·위생용품 — 수요일, 지하창고 기준 수량' },
+  { id: 'product', title: '제품 · 재료', short: '제품', dayLabel: '월·목', dayText: '월·목 발주', orderDays: [1, 4], desc: '음료 재료 시트 3장 — 씨앤비 월·목 발주' },
+  { id: 'supply', title: '자재 · 소모품', short: '자재', dayLabel: '수', dayText: '수요일 발주', orderDays: [3], desc: '포장·컵·봉투·위생용품 — 수요일, 지하창고 기준 수량' },
 ];
 export const DEFAULT_BOOK = 'product';
 
