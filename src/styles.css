@@ -805,3 +805,79 @@ details summary {
 .book-head {
   margin-top: 4px;
 }
+
+/* ── 그룹 진행 칩 ── */
+.chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar {
+  display: none;
+}
+.chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 32px;
+  white-space: nowrap;
+}
+.chip b {
+  color: var(--text);
+  margin-left: 2px;
+}
+.chip.part {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.chip.done {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.chip.done b {
+  color: var(--ok);
+}
+.tiny-pill {
+  font-size: 11px;
+  padding: 1px 6px;
+}
+.order-pill:empty {
+  display: none;
+}
+
+/* ── 촘촘히 보기: 이름·기준·숫자만, 부가 정보는 누른 줄에서만 ── */
+.dense .item-row {
+  padding: 5px 10px;
+}
+.dense .item-row .name {
+  font-size: 15px;
+}
+.dense .item-row .meta {
+  display: none;
+}
+.dense .item-row.active .meta {
+  display: block;
+}
+.dense .stepper button {
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+}
+.dense .stepper input {
+  width: 52px;
+  height: 36px;
+  font-size: 17px;
+}
+.dense .group {
+  margin-bottom: 10px;
+}
+.dense .group-head {
+  padding: 6px 0 4px;
+}

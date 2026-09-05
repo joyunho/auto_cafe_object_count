@@ -88,8 +88,23 @@ try {
   assert.equal(await count('yuja-cheong').inputValue(), '2');
   assert.equal(await count('cafe-syrup').inputValue(), '8');
   assert.match(await page.locator('#progress-text').textContent(), new RegExp(`^5/${activeCount} `));
+  // 세는 즉시 줄에 발주 수량이, 위에는 발주 예정 개수가, 그룹 칩에는 진행이 보인다
+  assert.match(await page.locator('.item-row[data-row="sparkling-water"] .order-pill').textContent(), /발주 5개/);
+  assert.match(await page.locator('.item-row[data-row="cafe-syrup"] .order-pill').textContent(), /충분/);
+  assert.match(await page.locator('#pending-pill').textContent(), /발주 예정 4/);
+  assert.match(await page.locator('.chip[data-id="cheong"]').textContent(), /2\/5/);
+  assert.ok((await page.locator('.chips .chip').count()) >= 5, '그룹 칩');
+  // 촘촘히(기본)에서는 부가 정보가 숨고, 넓게 보기로 바꾸면 보인다
+  assert.ok(await page.locator('#count-list').evaluate((el) => el.classList.contains('dense')), '기본은 촘촘히');
+  assert.ok(!(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible()), '촘촘히에서는 메타 숨김');
+  await page.locator('[data-action="count-dense-toggle"]').click();
+  await page.waitForFunction(() => window.__cafeApp.state.ui.countDense === false);
+  assert.ok(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible(), '넓게 보기에서는 메타 표시');
+  await shot(page, 'count-wide');
+  await page.locator('[data-action="count-dense-toggle"]').click();
+  await page.waitForFunction(() => window.__cafeApp.state.ui.countDense !== false);
   await shot(page, 'count-filled');
-  log('수량 입력 및 진행률 갱신');
+  log('수량 입력 · 진행률 · 줄별 발주 표시 · 그룹 칩 · 촘촘히/넓게');
 
   // 3. 새로고침 후에도 유지
   await page.reload();
