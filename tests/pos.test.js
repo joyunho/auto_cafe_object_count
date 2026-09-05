@@ -54,6 +54,10 @@ test('aggregateSales: 상품×월 합산', () => {
   assert.equal(agg.products['hot아메리카노'].byMonth['2026-02'], 100);
   assert.equal(agg.products['hot아메리카노'].total, 1334);
   assert.equal(agg.products['hot아메리카노'].group, '커피');
+  // 같은 상품이 달마다 다른 그룹이면 가장 최근 달의 그룹 (파일 순서와 무관)
+  const c = parseSalesReport(SAMPLE.replace('2026-01-01   2026-01-31', '2025-12-01   2025-12-31').replace('00007 주스/병음료 골드메달사과주스', '00009 디저트 골드메달사과주스').replace('주스/병음료 합계 17 71,000 0', '디저트 합계 17 71,000 0'));
+  assert.equal(aggregateSales([a, c]).products['골드메달사과주스'].group, '주스/병음료');
+  assert.equal(aggregateSales([c, a]).products['골드메달사과주스'].group, '주스/병음료');
 });
 
 test('daysInMonth', () => {
