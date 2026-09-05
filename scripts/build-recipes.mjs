@@ -5,8 +5,8 @@
 //   - 티백 메뉴를 "티백 X" 이름으로 통일하고 ICE/HOT 모두 티백 1봉 소비
 //   - 애플유자 ICE의 "애플유자티 물 150ml" → 애플유자티 1봉
 //   - 옛날미숫가루의 "미숫가루 베이스 180g" → 베이스 배합(PREP) 비율로 원재료 환산
-//   - 시나몬가루/가니쉬처럼 수량이 없는 항목에 추정 수량 부여
-//   - 레시피에 없는 판매 메뉴(유자차) 추가
+//   - 시나몬가루/가니쉬처럼 수량이 없는 항목은 수량을 지어내지 않고 "1회(serving/ea)"로만 남김
+//   - 레시피에 없는 판매 메뉴(유자차 등)는 추가하지 않음 → 분석에서 "레시피 없음"으로 표시
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,19 +55,13 @@ for (const r of data.recipes) {
         { name: '설탕시럽', qty: misuPer180.설탕시럽 * k, unit: 'g' },
       ];
     }
-    if (i.name === '시나몬가루') return [{ name: '시나몬가루', qty: 0.3, unit: 'g', assumed: true }];
-    if (i.name === '가니쉬') return [{ name: '오렌지 가니쉬', qty: 1, unit: 'ea', assumed: true }];
-    if (i.name === '키위' && i.unit === 'g') return [{ name: '키위', qty: i.qty / 100, unit: 'ea' }];
+    if (i.name === '시나몬가루') return [{ name: '시나몬가루', qty: 1, unit: 'serving' }]; // 정량 미표기 → 잔 수만
+    if (i.name === '가니쉬') return [{ name: '가니쉬', qty: 1, unit: 'ea' }]; // 종류 미표기 → 그대로 둠
     if (i.name === '대추' || i.name === '잣') return [{ name: i.name, qty: i.qty, unit: 'ea' }];
     if (['얼음', '물', '뜨거운물', '우유거품', '초코드리즐', '아몬드슬라이스', '얼음 추가', '티백 우린 물'].includes(i.name)) return [];
     return [i];
   });
   out.push({ menu, variant: r.variant, category: r.category, ingredients, notes: r.notes || '' });
-}
-// 레시피에 없는 판매 메뉴: 유자차 (청귤차와 같은 방식으로 추정)
-if (!out.some((r) => r.menu === '유자차')) {
-  out.push({ menu: '유자차', variant: 'HOT', category: 'TEA', ingredients: [{ name: '유자청', qty: 45, unit: 'g', assumed: true }, { name: '오렌지 가니쉬', qty: 1, unit: 'ea', assumed: true }], notes: '레시피 없음 — 청귤차 방식으로 추정' });
-  out.push({ menu: '유자차', variant: 'ICE', category: 'TEA', ingredients: [{ name: '유자청', qty: 45, unit: 'g', assumed: true }, { name: '오렌지 가니쉬', qty: 1, unit: 'ea', assumed: true }], notes: '레시피 없음 — 청귤차 방식으로 추정' });
 }
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'recipes.json'), JSON.stringify({ measures: data.measures, recipes: out, supplies: data.supplies }, null, 1));

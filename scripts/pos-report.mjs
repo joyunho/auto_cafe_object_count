@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildChecklist } from './lib/checklist.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const a = JSON.parse(fs.readFileSync(path.join(root, 'data', 'analysis.json'), 'utf8'));
@@ -15,7 +16,7 @@ const n0 = (x) => (x == null ? '–' : Math.round(x).toLocaleString('ko-KR'));
 const n1 = (x) => (x == null ? '–' : (Math.round(x * 10) / 10).toLocaleString('ko-KR'));
 const n2 = (x) => (x == null ? '–' : (Math.round(x * 100) / 100).toLocaleString('ko-KR', { minimumFractionDigits: 2 }));
 const mLabel = (m) => `${Number(m.slice(5))}월`;
-const unitKo = { g: 'g', ml: 'ml', ea: '개', bag: '봉', shot: '샷' };
+const unitKo = { g: 'g', ml: 'ml', ea: '개', bag: '봉', shot: '샷', pump: '펌프', serving: '잔' };
 
 // ── 차트: 월별 음료 잔 수 (막대) ─────────────────────────────
 function barChart(months, values, { w = 720, h = 170, color = '#2a78d6', label = '' } = {}) {
@@ -99,6 +100,7 @@ const ignoredList = a.ignored || [];
 const item = (id) => a.items.find((r) => r.itemId === id);
 const sparkling = item('sparkling-water');
 const sparklingL = sparkling ? sparkling.totalRaw / 1000 : null;
+const checklist = buildChecklist(a);
 const sparklingBottlesPerDay = sparklingL ? Math.round((sparklingL * 1000) / 500 / 365) : null; // 500ml 병이라고 가정했을 때
 const dropWords = (s) => s.replace(/\(1box>6\)/, '');
 
@@ -187,19 +189,20 @@ const html = `<!doctype html>
   <div class="kpi"><div class="v">${n0(totalCups)}잔</div><div class="l">12개월 음료 판매 (옵션 제외)</div></div>
   <div class="kpi"><div class="v">${withPkg.length}개</div><div class="l">소비량을 낱개 단위로 계산한 재고 품목</div></div>
   <div class="kpi"><div class="v">${noPkg.length}개</div><div class="l">포장 단위를 몰라 원재료 양만 계산한 품목</div></div>
-  <div class="kpi"><div class="v">${withPkg.filter((r) => r.assumed).length}개</div><div class="l">포장 크기를 가정한 품목 (확인 필요)</div></div>
+  <div class="kpi"><div class="v">0개</div><div class="l">가정한 값 (모르는 값은 비워 둠 → 3장 확인 목록)</div></div>
 </div>
 
 <div class="callout">
   <div class="t">결론</div>
-  판매 자료와 레시피만으로 음료 재료 ${withPkg.length}개 품목의 소비 속도(낱개/일)를 <strong>세지 않고</strong> 얻을 수 있습니다(포장 단위를 모르는 ${noPkg.length}개는 원재료 양까지). 이 속도로 "지금쯤 몇 개"를 계산하면 앞서 제안한 예상 재고가
+  판매 자료와 레시피만으로 음료 재료 ${withPkg.length}개 품목의 소비 속도(낱개/일)를 <strong>세지 않고</strong> 얻을 수 있습니다. 포장 단위나 환산값을 모르는 ${noPkg.length}개는 가정하지 않고 원재료 양까지만 계산했으며, 3장 목록을 채워 주시면 마저 계산됩니다. 이 속도로 "지금쯤 몇 개"를 계산하면 앞서 제안한 예상 재고가
   기록을 쌓을 필요 없이 첫 주부터 작동하고, 기준 수량이 소비에 비해 너무 많거나 적은 품목(3장)도 바로 보입니다.
   매달 POS에서 이 보고서 한 장을 내보내 앱에 넣는 것이 유일한 새 습관입니다.
 </div>
 
 <h3>계산 방법</h3>
-<p>상품별 월 판매 잔 수 × 레시피 사용량(펌프·스쿱·칸 표기를 레시피의 g·ml 기준으로 환산) = 재료 소비량(g·ml·개). 이것을 레시피 구매 정보의 포장 크기(단지·병·봉 수)로 나눠 <strong>낱개 수</strong>로 바꿨습니다.
-시럽류는 g→ml 환산에 밀도 1.3을, 우유는 1.03을 썼습니다. 에스프레소 1샷 원두 18g, "샷 추가"는 1샷, 에스프레소 단품은 싱글 1샷·더블 2샷으로 계산했습니다. 원두는 시트처럼 일반·디카페인을 합쳐 두고 "디카페인" 옵션·디카페인 아메리카노 잔 수만큼을 따로 표시했습니다. 빵·디저트·쇼케이스·진동벨 그룹은 제외했습니다.</p>
+<p>상품별 월 판매 잔 수 × 레시피 사용량(레시피에 인쇄된 g·ml·봉 수) = 재료 소비량. 이것을 레시피 구매 정보에 적힌 포장 크기로 나눠 <strong>낱개 수</strong>로 바꿨습니다.
+자료에 없는 값(시럽 병의 g, 1샷 원두 g, 청 1단지 무게, 가니쉬 1포장 개수 등)은 <strong>가정하지 않고 비워 두었습니다</strong>. 그런 품목은 원재료 양(g·샷·개)만 나오며, 3장 목록을 채워 주시면 낱개로 바뀝니다.
+"샷 추가"는 1샷, 에스프레소 단품은 싱글 1샷·더블 2샷으로 세었습니다(확인 목록). 원두는 시트처럼 일반·디카페인을 합쳐 두고 디카페인 잔 수만큼을 따로 표시했습니다. 레시피가 없는 메뉴는 잔 수만 세고 재료는 계산하지 않았습니다. 빵·디저트·쇼케이스·진동벨 그룹은 제외했습니다.</p>
 
 <figure>${barChart(months, cups, { label: '월별 음료 판매 잔 수' })}<figcaption>월별 음료 판매 잔 수 (커피·티·에이드·라떼·주스, 옵션 제외)</figcaption></figure>
 <figure>${shareChart(months, ice, hot)}<figcaption>레시피가 있는 메뉴의 아이스·핫 비중. 여름엔 탄산수·청·얼음이, 겨울엔 대추·생강·스팀우유가 늘어납니다.</figcaption></figure>
@@ -211,9 +214,10 @@ const html = `<!doctype html>
 <thead><tr><th>품목</th><th class="num">연간 낱개</th><th class="num">일평균</th><th class="num">최대월</th><th class="num">시트 기준</th><th class="num">커버 일수</th><th class="num">제안 월→목 / 목→월</th><th class="note">포장 근거</th></tr></thead>
 <tbody>${rowsHtml}</tbody>
 </table>
-<p class="small muted">노아주스는 POS에 종류가 없어 연 ${n0(noaMerged?.totalUnits)}병을 4종(오렌지·당근·망고·키위)에 같은 비중으로 나눴습니다(앱에는 종류별로 들어감). 배도라지차는 시트 기준이 "2 BOX"인데 1박스 병 수를 몰라 커버 일수를 계산하지 않았습니다.</p>
+${noaMerged ? `<p class="small muted">노아주스는 POS에 종류가 없어 연 ${n0(noaMerged.totalUnits)}병을 4종에 같은 비중으로 나눴습니다.</p>` : ''}
 
-<h3>포장 단위를 몰라 원재료 양으로만 계산한 품목</h3>
+<h3>포장 단위(또는 환산값)를 몰라 원재료 양으로만 계산한 품목</h3>
+<p class="small muted">자료에 없는 값은 가정하지 않고 비워 두었습니다. 3장의 확인 목록을 채워 주시면 이 표의 품목도 위 표로 올라갑니다.</p>
 <table>
 <thead><tr><th>품목</th><th class="num">연간 사용량</th><th class="num">하루 평균</th><th class="num">시트 기준</th><th>필요한 정보</th></tr></thead>
 <tbody>${noPkgHtml}</tbody>
@@ -230,35 +234,22 @@ const html = `<!doctype html>
 <p class="small muted">연간 20낱개 이상 쓰는 품목만. 최대/최소가 2배를 넘으면 여름·겨울 기준을 따로 두는 것을 권합니다.</p>
 
 <h3>브런치·라면</h3>
-<p>브런치 1인분 ${n0(brunchTotal)}인분(어린이는 0.5로 계산), 라면 ${n0(ramenTotal)}그릇이 팔렸습니다. 브런치 재료(스모크햄·샐러드류·치즈·드레싱·버터·잼·양배추·당근)는 1인분 레시피가 있어야 같은 방식으로 계산할 수 있습니다.</p>
+<p>브런치 1인 ${n0(brunchTotal)}인분, 브런치 어린이 ${n0(Object.values(a.brunchKids || {}).reduce((x, y) => x + y, 0))}건(몇 인분인지 확인 전), 라면 ${n0(ramenTotal)}그릇이 팔렸습니다. 브런치 재료(스모크햄·샐러드류·치즈·드레싱·버터·잼·양배추·당근)는 1인분 레시피가 있어야 같은 방식으로 계산할 수 있습니다.</p>
 </section>
 
 <section class="section">
-<h2><span class="num">3</span>확인이 필요한 것</h2>
-<div class="callout warn">
-  <div class="t">포장 크기 확인 (숫자가 바로 바뀝니다)</div>
-  <ul style="margin:0;padding-left:5mm">
-    <li><strong>탄산수</strong> 1병 용량과 발주 단위 — 에이드에 연 ${n0(sparklingL)}L(하루 ${n1(sparklingL / 365)}L, 여름 최대 ${n1((sparkling?.peakPerDay || 0) / 1000)}L). 500ml 병이면 하루 ${n0(sparklingBottlesPerDay)}병이라 시트 기준 ${sparkling ? parCell(sparkling) : '–'}은 하루치뿐 → 기준 단위가 박스(또는 큰 병)로 보입니다. 확인 전에는 예상 재고에서 뺐습니다.</li>
-    <li><strong>딸기청·블루베리청</strong> 1단지 무게 (2kg 가정)</li>
-    <li><strong>배도라지차</strong> 1박스 병 수 (470g 병 기준 연 ${n0(a.items.find((r) => r.itemId === 'pear-bellflower-tea')?.totalUnits)}병)</li>
-    <li><strong>디카페인 콜드브루·미숫가루</strong> 1봉 무게 (1kg 가정)</li>
-    <li><strong>헤이즐넛·그린티 베이스·카라멜·바닐라·카페시럽</strong> 병 용량은 구매표대로, 밀도(1.3)만 가정</li>
-    <li><strong>병음료(골든메달·노아·에비앙·달콤사과)</strong> 시트 기준 "1"이 병인지 박스인지 (골든메달 연 ${n0(item('golden-apple-juice')?.totalUnits)}병 → 박스로 보임)</li>
-    <li><strong>오렌지가니쉬·대추·잣·아이스크림·토마토·키위</strong> 1포장 개수·무게</li>
-    <li><strong>건조레몬</strong>(구매표 100g봉) — 시트 1의 "레몬"이 이것인지, 1봉에 몇 조각인지</li>
-  </ul>
-</div>
-<div class="callout warn">
-  <div class="t">레시피·연결 확인</div>
-  <ul style="margin:0;padding-left:5mm">
-    <li>POS "어린이 사과주스"를 시트의 "달콤사과"로 봤습니다. 다른 제품이면 알려 주세요.</li>
-    <li>"유자차"는 레시피에 없어 청귤차와 같이 유자청 45g으로 계산했습니다.</li>
-    <li>레시피가 없어 재료 계산에서 뺀 메뉴(잔 수에는 포함): ${listHtml(noRecipe)} → 레시피를 주시면 추가합니다.</li>
-    <li>에스프레소 1샷 원두 양(18g 가정)에 따라 원두 소비량이 비례해 바뀝니다.</li>
-    <li>재료 소비와 무관해 제외한 옵션·호출 ${ignoredList.length}개: ${listHtml(ignoredList.filter((u) => u.total >= 100))} 등</li>
-    ${noLink.length ? `<li>연결표에 없는 상품(확인 필요): ${listHtml(noLink)}</li>` : ''}
-  </ul>
-</div>
+<h2><span class="num">3</span>확인 목록 — 비워 둔 값</h2>
+<p>자료(레시피·구매표·재고 시트)에 없는 값은 가정하지 않고 비워 두었습니다. 아래 값을 알려 주시면 해당 품목의 낱개 소비량과 예상 재고가 바로 계산됩니다. (같은 목록을 채워 보내실 수 있게 별도 PDF로도 드립니다.)</p>
+${checklist
+  .map(
+    (sec) => `<h3>${esc(sec.title)}</h3>
+<table>
+<thead><tr><th style="width:38mm">${esc(sec.head[0])}</th><th>${esc(sec.head[1])}</th><th style="width:34mm">${esc(sec.head[2])}</th></tr></thead>
+<tbody>${sec.rows.map((r) => `<tr><td class="lead" style="white-space:normal">${esc(r[0])}</td><td>${esc(r[1])}</td><td class="small muted">${esc(r[2])}</td></tr>`).join('')}</tbody>
+</table>`,
+  )
+  .join('')}
+<p class="small muted">답이 오면 <code>src/data/pos-map.js</code>의 빈 값을 채우고 분석을 다시 돌립니다. 답이 없는 항목은 그대로 비워 둡니다.</p>
 
 <h2 style="margin-top:8mm"><span class="num">4</span>이 자료로 더 자동화되는 것</h2>
 <table>

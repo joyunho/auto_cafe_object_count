@@ -48,7 +48,7 @@ const rows = Object.values(byItem)
     const parLabel = it && it.par != null ? (it.parUnit === 'box' ? `${it.par}박스` : String(it.par)) : null;
     const sug = r.perPackage ? { mon_thu: suggestParFromRate(r.peakPerDay, { coverDays: 3 }), thu_mon: suggestParFromRate(r.peakPerDay, { coverDays: 4 }), avg4: suggestParFromRate(r.avgPerDay, { coverDays: 4 }) } : null;
     let note = r.note;
-    if (r.totalDecafRaw) note += ` (디카페인 ${(r.totalDecafRaw / 1000).toFixed(0)}kg/년 포함)`;
+    if (r.totalDecafRaw) note += r.unit === 'shot' ? ` (디카페인 ${Math.round(r.totalDecafRaw).toLocaleString()}샷/년 포함)` : ` (디카페인 ${(r.totalDecafRaw / 1000).toFixed(0)}kg/년 포함)`;
     return { ...r, note, parEach, parLabel, boxSize: it?.boxSize || null, suggested: sug, season: seasonality(r.perDay, sales.months) };
   })
   .sort((a, b) => (b.avgPerDay || 0) - (a.avgPerDay || 0));
@@ -61,6 +61,7 @@ const out = {
   iceHot,
   items: rows,
   brunch: byIngredient['@brunch']?.months || {},
+  brunchKids: byIngredient['@brunch-kids']?.months || {},
   ramen: byIngredient['@ramen']?.months || {},
   unmapped,
   ignored,
@@ -90,7 +91,7 @@ console.log('\n품목 | 단위 | 1포장 | 연간 낱개 | 일평균 | 최대월
 for (const r of rows) {
   console.log(`${r.name} | ${r.unit} | ${r.perPackage ?? '?'} | ${r.totalUnits == null ? '-' : r.totalUnits.toFixed(1)} | ${f1(r.avgPerDay)} | ${f1(r.peakPerDay)} | ${r.parEach ?? '-'} | ${r.suggested ? `${r.suggested.mon_thu}/${r.suggested.thu_mon}` : '-'} | ${r.assumed ? '가정' : ''} ${r.perPackage ? '' : '(포장 단위 모름: 원자료 ' + r.totalRaw.toFixed(0) + r.unit + '/년)'}`);
 }
-console.log('\n브런치 1인분:', JSON.stringify(out.brunch), '\n라면:', JSON.stringify(out.ramen));
+console.log('\n브런치 1인:', JSON.stringify(out.brunch), '\n브런치 어린이:', JSON.stringify(out.brunchKids), '\n라면:', JSON.stringify(out.ramen));
 console.log('\n미연결 상품:', unmapped.map((u) => `${u.product}(${u.total}${u.reason ? ', ' + u.reason : ''})`).join(', ') || '없음');
 console.log('의도적으로 뺀 옵션:', ignored.map((u) => `${u.product}(${u.total})`).join(', '));
 console.log('메모:', notes.join('; ') || '없음');

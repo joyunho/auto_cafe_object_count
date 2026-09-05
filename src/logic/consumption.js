@@ -24,9 +24,9 @@ export function indexRecipes(recipes) {
   return idx;
 }
 
-/** 메뉴·변형에 맞는 레시피. HOT/ICE가 없으면 있는 쪽을 쓴다 */
+/** 메뉴·변형에 정확히 맞는 레시피만. 없으면 null (다른 변형으로 대체하지 않는다) */
 export function findRecipe(idx, menu, variant) {
-  return idx.get(recipeKey(menu, variant)) || idx.get(recipeKey(menu, 'ICE')) || idx.get(recipeKey(menu, 'HOT')) || idx.get(recipeKey(menu, 'ANY')) || null;
+  return idx.get(recipeKey(menu, variant)) || null;
 }
 
 /**
@@ -55,9 +55,13 @@ export function consumptionByIngredient(sales, recipes, maps) {
       ignored.push({ product, group: p.group, total: p.total });
       continue;
     }
+    if (map.unknown) {
+      unmapped.push({ product, group: p.group, total: p.total, reason: map.unknown });
+      continue;
+    }
     const recipe = map.menu ? findRecipe(idx, map.menu, map.variant) : null;
     if (map.menu && !recipe) {
-      unmapped.push({ product, group: p.group, total: p.total, reason: `레시피 없음: ${map.menu}` });
+      unmapped.push({ product, group: p.group, total: p.total, reason: `레시피 없음: ${map.menu} ${map.variant}` });
       continue;
     }
     for (const [month, qty] of Object.entries(p.byMonth)) {
@@ -89,6 +93,10 @@ export function consumptionByIngredient(sales, recipes, maps) {
       }
       if (map.brunch != null) {
         add('@brunch', 'ea', month, qty * map.brunch);
+        continue;
+      }
+      if (map.brunchKids != null) {
+        add('@brunch-kids', 'ea', month, qty * map.brunchKids);
         continue;
       }
       if (map.ramen != null) {
@@ -151,15 +159,15 @@ export function consumptionByItem(months, byIngredient, decafCups, maps, items) 
     if (map === null || !map.item) continue;
 
     if (name === '에스프레소샷') {
-      // 샷 → 원두 g. 시트에는 "원두 / 디카페인 원두"가 한 줄이라 합쳐서 기록하고,
-      // 디카페인 잔 수만큼은 decafRaw로 따로 적어 둔다 (보고서용).
-      const gPerShot = map.perShotG || 18;
-      const r = rec(map.item, { ...map, unit: 'g' });
+      // 샷 → 원두. 1샷 원두 g(perShotG)을 알면 g로, 모르면 샷 수 그대로 집계한다.
+      // 시트에는 "원두 / 디카페인 원두"가 한 줄이라 합쳐서 기록하고, 디카페인 잔 수만큼은 decafRaw로 따로 적어 둔다.
+      const gPerShot = map.perShotG || null;
+      const r = rec(map.item, { ...map, unit: gPerShot ? 'g' : 'shot' });
       r.decafRaw ||= {};
       for (const [m, shots] of Object.entries(e.months)) {
         const decaf = Math.min(shots, decafCups[m] || 0);
-        r.raw[m] = (r.raw[m] || 0) + shots * gPerShot;
-        r.decafRaw[m] = (r.decafRaw[m] || 0) + decaf * gPerShot;
+        r.raw[m] = (r.raw[m] || 0) + shots * (gPerShot || 1);
+        r.decafRaw[m] = (r.decafRaw[m] || 0) + decaf * (gPerShot || 1);
       }
       r.sources.add('에스프레소 메뉴');
       if (Object.values(r.decafRaw).some((v) => v > 0)) r.sources.add('디카페인 옵션');
