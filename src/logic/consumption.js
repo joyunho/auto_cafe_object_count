@@ -10,7 +10,7 @@
 //   byIngredient[name][month] = 소비량 (레시피 단위)
 //   byItem[itemId] = { unit, perPackage, assumed, monthly: {month: 낱개 수}, raw: {month: g/ml/ea}, perDay: {month}, avgPerDay, peakPerDay, notes }
 //   unmapped : 매출은 있는데 레시피/품목 연결이 없는 상품 (reason이 있으면 "레시피 없음")
-//   ignored  : 재료 소비와 무관해 의도적으로 뺀 상품 (PRODUCT_MAP에서 null) — 잔 수만 보고용
+//   ignored  : 재료 소비와 무관해 의도적으로 뺀 상품 (PRODUCT_MAP에서 null, 또는 IGNORED_GROUPS의 그룹째: byGroup) — 잔 수만 보고용
 
 import { daysInMonth } from './pos.js';
 
@@ -45,7 +45,10 @@ export function consumptionByIngredient(sales, recipes, maps) {
   };
 
   for (const [product, p] of Object.entries(sales.products)) {
-    if (IGNORED_GROUPS.includes(p.group)) continue;
+    if (IGNORED_GROUPS.includes(p.group)) {
+      ignored.push({ product, group: p.group, total: p.total, byGroup: true }); // 그룹째 제외 — 보고서에 건수만
+      continue;
+    }
     if (!(product in PRODUCT_MAP)) {
       unmapped.push({ product, group: p.group, total: p.total });
       continue;

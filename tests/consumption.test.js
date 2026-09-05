@@ -88,7 +88,8 @@ test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시
   assert.equal(unmapped.find((u) => u.product === '노아주스 x').reason, '종류 불명');
   assert.equal(byIngredient['@brunch-kids'].months['2026-01'], 4);
   // null로 연결한 옵션은 ignored에 잔 수와 함께 남는다 (무시 그룹은 아예 안 나옴)
-  assert.deepEqual(ignored.map((u) => `${u.product}:${u.total}`).sort(), ['연하게:50', '진동벨 1번:5']);
+  assert.deepEqual(ignored.map((u) => `${u.product}:${u.total}`).sort(), ['소금빵:999', '연하게:50', '진동벨 1번:5']);
+  assert.equal(ignored.find((u) => u.product === '소금빵').byGroup, true);
   assert.ok(!('소금빵' in byIngredient));
 });
 

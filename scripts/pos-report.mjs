@@ -98,10 +98,10 @@ const noRecipe = (a.unmapped || []).filter((u) => /레시피 없음/.test(u.reas
 const noLink = (a.unmapped || []).filter((u) => !/레시피 없음/.test(u.reason || ''));
 const ignoredList = a.ignored || [];
 const item = (id) => a.items.find((r) => r.itemId === id);
-const sparkling = item('sparkling-water');
-const sparklingL = sparkling ? sparkling.totalRaw / 1000 : null;
 const checklist = buildChecklist(a);
-const sparklingBottlesPerDay = sparklingL ? Math.round((sparklingL * 1000) / 500 / 365) : null; // 500ml 병이라고 가정했을 때
+const checklistCount = checklist.reduce((n, sec) => n + sec.rows.length, 0);
+const ignoredByGroup = {};
+for (const u of ignoredList) if (u.byGroup) ignoredByGroup[u.group] = (ignoredByGroup[u.group] || 0) + u.total;
 const dropWords = (s) => s.replace(/\(1box>6\)/, '');
 
 const rowsHtml = withPkg
@@ -189,7 +189,7 @@ const html = `<!doctype html>
   <div class="kpi"><div class="v">${n0(totalCups)}잔</div><div class="l">12개월 음료 판매 (옵션 제외)</div></div>
   <div class="kpi"><div class="v">${withPkg.length}개</div><div class="l">소비량을 낱개 단위로 계산한 재고 품목</div></div>
   <div class="kpi"><div class="v">${noPkg.length}개</div><div class="l">포장 단위를 몰라 원재료 양만 계산한 품목</div></div>
-  <div class="kpi"><div class="v">0개</div><div class="l">가정한 값 (모르는 값은 비워 둠 → 3장 확인 목록)</div></div>
+  <div class="kpi"><div class="v">${checklistCount}개</div><div class="l">비워 둔 값 (가정하지 않음 → 3장 확인 목록)</div></div>
 </div>
 
 <div class="callout">
@@ -249,9 +249,12 @@ ${checklist
 </table>`,
   )
   .join('')}
+<p class="small muted">재료 계산에서 뺀 것 — 옵션·호출 ${ignoredList.filter((u) => !u.byGroup).length}개(${listHtml(ignoredList.filter((u) => !u.byGroup && u.total >= 100))} 등), 그룹째 제외 ${Object.entries(ignoredByGroup).map(([g, t]) => `${esc(g)} ${n0(t)}건`).join(' · ') || '없음'}. 레시피가 없어 뺀 메뉴: ${listHtml(noRecipe)}.</p>
 <p class="small muted">답이 오면 <code>src/data/pos-map.js</code>의 빈 값을 채우고 분석을 다시 돌립니다. 답이 없는 항목은 그대로 비워 둡니다.</p>
 
-<h2 style="margin-top:8mm"><span class="num">4</span>이 자료로 더 자동화되는 것</h2>
+</section>
+<section class="section">
+<h2><span class="num">4</span>이 자료로 더 자동화되는 것</h2>
 <table>
 <thead><tr><th style="width:40mm">자동화</th><th>어떻게</th><th style="width:34mm">새로 필요한 습관</th></tr></thead>
 <tbody>

@@ -65,12 +65,14 @@ export function parseSalesReport(text) {
 export function aggregateSales(reports) {
   const months = [];
   const products = {};
-  for (const rep of reports) {
+  // 달 순서로 처리해 같은 상품이 여러 그룹에 나오면 가장 최근 달의 그룹을 쓴다 (파일 읽기 순서와 무관)
+  const sorted = [...reports].sort((a, b) => String(a.period?.month || '').localeCompare(String(b.period?.month || '')));
+  for (const rep of sorted) {
     const month = rep.period?.month || `m${months.length + 1}`;
     if (!months.includes(month)) months.push(month);
     for (const r of rep.rows) {
       const p = (products[r.product] ||= { group: r.group, byMonth: {}, total: 0 });
-      if (!p.group && r.group) p.group = r.group;
+      if (r.group) p.group = r.group;
       p.byMonth[month] = (p.byMonth[month] || 0) + r.qty;
       p.total += r.qty;
     }
