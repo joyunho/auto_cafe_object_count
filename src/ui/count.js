@@ -1,6 +1,6 @@
 // 재고조사 탭 — 장부(제품/자재)별로 품목을 세고, 종이 시트처럼 "이름 · 빨간 기준 · 검은 숫자"만 보이게 한다
 import { esc, fmtDateKo } from './html.js';
-import { parInCountUnit, unitLabel, unitsUnresolved, formatDate } from '../logic/order.js';
+import { parInCountUnit, unitLabel, unitsUnresolved, formatDate, calcOrderLine, calcOrder, linesToOrder } from '../logic/order.js';
 import { forecastAll } from '../logic/forecast.js';
 import { BOOKS } from '../data/books.js';
 
@@ -52,7 +52,16 @@ function itemMeta(it, f) {
   return parts.join(' · ');
 }
 
-function rowHtml(it, val, f) {
+/** 수량을 넣은 줄에 "발주 N" 표시 — 세면서 바로 발주 결과가 보이게 */
+function orderPill(it, val, override) {
+  if (val == null) return '';
+  const l = calcOrderLine(it, val);
+  const qty = override != null ? override : l.qty;
+  if (!qty) return l.auto ? '<span class="pill ok tiny-pill">충분</span>' : '';
+  return `<span class="pill accent tiny-pill">발주 ${qty}${esc(unitLabel(l.unit, it))}</span>`;
+}
+
+function rowHtml(it, val, f, override) {
   const has = val != null;
   const parCount = parInCountUnit(it);
   const unit = it.countUnit === 'box' ? '박스' : it.unitName || '';
@@ -61,7 +70,7 @@ function rowHtml(it, val, f) {
   return `
     <div class="item-row ${has ? 'done' : ''} ${check ? 'needs-check' : ''}" data-row="${esc(it.id)}">
       <div class="item-main" data-action="row-focus" data-id="${esc(it.id)}">
-        <div class="name">${esc(it.name)} ${parInline(it)}${check ? ' <span class="pill warn">확인 필요</span>' : f ? ' <span class="pill ok">예상 OK</span>' : ''}</div>
+        <div class="name">${esc(it.name)} ${parInline(it)}${check ? ' <span class="pill warn">확인 필요</span>' : f ? ' <span class="pill ok tiny-pill">예상 OK</span>' : ''} <span class="order-pill">${orderPill(it, val, override)}</span></div>
         ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
       <div class="item-ctl">
@@ -100,6 +109,18 @@ export function render(s, app) {
     .filter((x) => x.items.length);
   const ungrouped = items.filter((it) => !s.groups.some((g) => g.id === it.group) && visible(it));
   const stale = sess.date < formatDate(new Date());
+  const dense = s.ui.countDense !== false; // 기본: 촘촘히
+  const pending = linesToOrder(calcOrder(items, sess.counts, sess.overrides || {})).length;
+  const overrides = sess.overrides || {};
+  // 그룹 진행 칩: 어느 그룹이 끝났는지 한눈에 + 눌러서 이동
+  const allGroups = s.groups.filter((g) => (g.book || 'product') === book).map((g) => ({ g, items: items.filter((it) => it.group === g.id) })).filter((x) => x.items.length);
+  const chips = allGroups
+    .map(({ g, items: gi }) => {
+      const d = gi.filter((it) => sess.counts[it.id] != null).length;
+      const cls = d === gi.length ? 'done' : d ? 'part' : '';
+      return `<button type="button" class="chip ${cls}" data-action="jump-group" data-id="${esc(g.id)}">${esc(g.title)} <b>${d}/${gi.length}</b></button>`;
+    })
+    .join('');
 
   return `
     ${bookSwitch(s)}
@@ -113,6 +134,10 @@ export function render(s, app) {
       </div>
       ${stale ? `<p class="small mt" style="color:var(--warn);margin-bottom:0">지난 발주일(${esc(sess.date)})로 진행 중입니다. 날짜를 확인하세요.</p>` : ''}
       <div class="progress mt" aria-hidden="true"><div id="progress-bar" style="width:${pct}%"></div></div>
+      <div class="row between wrap mt" style="row-gap:4px">
+        <span class="small"><span class="pill accent" id="pending-pill">발주 예정 ${pending}</span></span>
+        <button type="button" class="btn sm ghost" data-action="count-dense-toggle" aria-pressed="${dense}">${dense ? '넓게 보기' : '촘촘히 보기'}</button>
+      </div>
       ${
         nForecast
           ? `<p class="small mt" style="margin-bottom:0"><span class="pill ${nCheck ? 'warn' : 'ok'}">확인 필요 ${nCheck}</span> <span class="muted">예상값이 있는 ${nForecast}개 중 ${nCheck}개만 직접 세면 됩니다.</span></p>
@@ -127,20 +152,23 @@ export function render(s, app) {
       </div>
     </section>
 
+    ${chips ? `<div class="chips" aria-label="그룹 진행">${chips}</div>` : ''}
+    <div class="${dense ? 'dense' : ''}" id="count-list">
     ${groups
       .map(
         ({ g, items }) => `
-      <section class="group">
+      <section class="group" id="g-${esc(g.id)}">
         <div class="group-head"><span>${esc(g.title)}</span><span class="tiny">${items.filter((it) => sess.counts[it.id] != null).length}/${items.length}</span></div>
-        <div class="item-list">${items.map((it) => rowHtml(it, sess.counts[it.id], fc[it.id])).join('')}</div>
+        <div class="item-list">${items.map((it) => rowHtml(it, sess.counts[it.id], fc[it.id], overrides[it.id])).join('')}</div>
       </section>`,
       )
       .join('')}
     ${
       ungrouped.length
-        ? `<section class="group"><div class="group-head"><span>기타</span></div><div class="item-list">${ungrouped.map((it) => rowHtml(it, sess.counts[it.id], fc[it.id])).join('')}</div></section>`
+        ? `<section class="group"><div class="group-head"><span>기타</span></div><div class="item-list">${ungrouped.map((it) => rowHtml(it, sess.counts[it.id], fc[it.id], overrides[it.id])).join('')}</div></section>`
         : ''
     }
+    </div>
     ${onlyCheck && !groups.length && !ungrouped.length ? `<div class="card empty">확인이 필요한 품목이 없습니다. 예상값을 채우고 발주서로 넘어가세요.</div>` : ''}
     ${!groups.length && !ungrouped.length && !onlyCheck ? `<div class="card empty">이 장부에 품목이 없습니다. 품목 탭에서 추가하세요.</div>` : ''}
 
@@ -178,11 +206,27 @@ function setCount(app, id, val) {
     sess.updatedAt = new Date().toISOString();
   });
   const row = document.querySelector(`[data-row="${CSS.escape(id)}"]`);
+  const it = s.items.find((x) => x.id === id);
   if (row) {
     row.classList.toggle('done', v != null);
     const input = row.querySelector('input[data-input="count"]');
     if (input && document.activeElement !== input) input.value = v == null ? '' : String(v);
     if (input) input.classList.toggle('empty', v == null);
+    const pill = row.querySelector('.order-pill');
+    if (pill && it) pill.innerHTML = orderPill(it, v);
+  }
+  const pendingPill = document.getElementById('pending-pill');
+  if (pendingPill) {
+    const items = activeItems(s, sess.book || 'product');
+    pendingPill.textContent = `발주 예정 ${linesToOrder(calcOrder(items, sess.counts, sess.overrides || {})).length}`;
+  }
+  const chip = it && document.querySelector(`.chip[data-id="${CSS.escape(it.group)}"]`);
+  if (chip) {
+    const gi = activeItems(s, sess.book || 'product').filter((x) => x.group === it.group);
+    const d = gi.filter((x) => sess.counts[x.id] != null).length;
+    chip.querySelector('b').textContent = `${d}/${gi.length}`;
+    chip.classList.toggle('done', d === gi.length);
+    chip.classList.toggle('part', d > 0 && d < gi.length);
   }
   const { done, total } = progress(s, sess);
   const pct = total ? Math.round((done / total) * 100) : 0;
@@ -219,6 +263,17 @@ export const changes = {
 };
 
 export const actions = {
+  'jump-group'(el) {
+    const target = document.getElementById(`g-${el.dataset.id}`);
+    if (!target) return;
+    const y = target.getBoundingClientRect().top + window.scrollY - 64; // 상단 고정 헤더만큼
+    window.scrollTo({ top: y, behavior: 'smooth' });
+  },
+  'count-dense-toggle'(el, e, app) {
+    app.update((s) => {
+      s.ui.countDense = s.ui.countDense === false ? true : false;
+    });
+  },
   'row-focus'(el, e) {
     if (e.target.closest('button, input')) return;
     const row = el.closest('.item-row');
