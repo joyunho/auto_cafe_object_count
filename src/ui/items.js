@@ -2,6 +2,7 @@
 import { esc } from './html.js';
 import { unitLabel } from '../logic/order.js';
 import { resetItems, uid } from '../store.js';
+import { BOOKS, bookOf } from '../data/books.js';
 
 function slugify(name) {
   return (
@@ -13,18 +14,32 @@ function slugify(name) {
 }
 
 export function render(s) {
-  const groups = s.groups.map((g) => ({ g, items: s.items.filter((it) => it.group === g.id) }));
   const ungrouped = s.items.filter((it) => !s.groups.some((g) => g.id === it.group));
   return `
     <section class="card">
+      <h2 style="margin:0">품목 <span class="muted small">${s.items.filter((it) => it.active !== false).length}개 사용 중</span></h2>
+      <p class="tiny muted" style="margin:8px 0 0">기준 수량(시트의 빨간 숫자)과 박스 단위, 최소 발주 규칙을 여기서 고칩니다. 품목을 눌러 편집하세요. 장부(제품/자재)별로 나뉘어 있습니다.</p>
+    </section>
+    ${BOOKS.map((b) => bookSection(s, b)).join('')}
+    ${ungrouped.length ? `<section class="group"><div class="group-head"><span>그룹 없음</span></div><div class="item-list">${ungrouped.map(itemRow).join('')}</div></section>` : ''}
+    <section class="card">
+      <button type="button" class="btn block danger" data-action="items-reset">품목을 기본 시트 데이터로 되돌리기</button>
+      <p class="tiny muted" style="margin:8px 0 0">재고조사/발주 기록은 지워지지 않습니다.</p>
+    </section>`;
+}
+
+function bookSection(s, b) {
+  const groups = s.groups.filter((g) => (g.book || 'product') === b.id).map((g) => ({ g, items: s.items.filter((it) => it.group === g.id) }));
+  return `
+    <section class="card compact book-head">
       <div class="row between wrap">
-        <h2 style="margin:0">품목 <span class="muted small">${s.items.filter((it) => it.active !== false).length}개 사용 중</span></h2>
+        <h2 style="margin:0">${esc(b.title)} <span class="muted small">${esc(b.dayLabel)} 발주</span></h2>
         <div class="row">
-          <button type="button" class="btn sm" data-action="group-add">+ 그룹</button>
-          <button type="button" class="btn sm primary" data-action="item-new">+ 품목</button>
+          <button type="button" class="btn sm" data-action="group-add" data-book="${b.id}">+ 그룹</button>
+          <button type="button" class="btn sm primary" data-action="item-new" data-book="${b.id}">+ 품목</button>
         </div>
       </div>
-      <p class="tiny muted" style="margin:8px 0 0">기준 수량(시트의 빨간 숫자)과 박스 단위, 최소 발주 규칙을 여기서 고칩니다. 품목을 눌러 편집하세요.</p>
+      <p class="tiny muted" style="margin:6px 0 0">${esc(b.desc)}</p>
     </section>
     ${groups
       .map(
@@ -41,21 +56,16 @@ export function render(s) {
         <div class="item-list">${items.map((it) => itemRow(it)).join('') || '<div class="empty small">품목 없음</div>'}</div>
       </section>`,
       )
-      .join('')}
-    ${ungrouped.length ? `<section class="group"><div class="group-head"><span>그룹 없음</span></div><div class="item-list">${ungrouped.map(itemRow).join('')}</div></section>` : ''}
-    <section class="card">
-      <button type="button" class="btn block danger" data-action="items-reset">품목을 기본 시트 데이터로 되돌리기</button>
-      <p class="tiny muted" style="margin:8px 0 0">재고조사/발주 기록은 지워지지 않습니다.</p>
-    </section>`;
+      .join('')}`;
 }
 
 function itemRow(it) {
   const meta = [];
-  meta.push(it.par != null ? `기준 ${it.par}${it.parUnit === 'box' ? '박스' : '개'}` : '기준 없음');
+  meta.push(it.par != null ? `기준 ${it.par}${it.parUnit === 'box' ? '박스' : unitLabel('ea', it)}` : '기준 없음');
   if (it.boxSize) meta.push(`1박스=${it.boxSize}`);
   if (it.orderUnit === 'box') meta.push('박스 발주');
-  if (it.rule?.type === 'reorderPoint') meta.push(`${it.rule.threshold}개 미만→${it.rule.orderQty}${unitLabel(it.orderUnit)}`);
-  if (it.minOrder) meta.push(`최소 ${it.minOrder}${unitLabel(it.orderUnit)}`);
+  if (it.rule?.type === 'reorderPoint') meta.push(`${it.rule.threshold}${unitLabel('ea', it)} 미만→${it.rule.orderQty}${unitLabel(it.orderUnit, it)}`);
+  if (it.minOrder) meta.push(`최소 ${it.minOrder}${unitLabel(it.orderUnit, it)}`);
   if (it.active === false) meta.push('사용 안 함');
   return `
     <div class="item-row ${it.active === false ? 'inactive' : ''}" data-action="item-edit" data-id="${esc(it.id)}" role="button" tabindex="0">
@@ -76,10 +86,10 @@ function formHtml(s, it, isNew) {
     <h2>${isNew ? '품목 추가' : '품목 편집'}</h2>
     <form id="item-form">
       <div class="field"><label>품목명</label><input type="text" name="name" value="${esc(it.name)}" required /></div>
-      <div class="field"><label>그룹</label>
-        <select name="group">${s.groups.map((g) => `<option value="${esc(g.id)}" ${g.id === it.group ? 'selected' : ''}>${esc(g.title)}</option>`).join('')}</select></div>
+      <div class="field"><label>그룹 <span class="muted">(장부는 그룹을 따릅니다: 제품 / 자재)</span></label>
+        <select name="group">${s.groups.map((g) => `<option value="${esc(g.id)}" ${g.id === it.group ? 'selected' : ''}>${esc(bookOf(g.book).short)} · ${esc(g.title)}</option>`).join('')}</select></div>
       <div class="grid-2">
-        <div class="field"><label>기준 수량 (빨간 숫자)</label><input type="number" name="par" min="0" inputmode="numeric" value="${it.par ?? ''}" placeholder="없음" /></div>
+        <div class="field"><label>기준 수량 (빨간 숫자)</label><input type="number" name="par" min="0" step="0.5" inputmode="decimal" value="${it.par ?? ''}" placeholder="없음" /><div class="hint">1.5처럼 0.5 단위도 됩니다</div></div>
         <div class="field"><label>기준 수량 단위</label>
           <select name="parUnit"><option value="ea" ${it.parUnit !== 'box' ? 'selected' : ''}>개</option><option value="box" ${it.parUnit === 'box' ? 'selected' : ''}>박스</option></select></div>
       </div>
@@ -102,6 +112,7 @@ function formHtml(s, it, isNew) {
         </div>
         <div class="hint">기준 수량과는 별개입니다. 규칙이 켜지면 기준 수량 대신 이 규칙으로 발주량을 정합니다.</div>
       </div>
+      <div class="field"><label>낱개 단위 이름 <span class="muted">(비우면 "개" · 예: 묶음, 롤, 봉)</span></label><input type="text" name="unitName" value="${esc(it.unitName || '')}" placeholder="개" /></div>
       <div class="field"><label>별칭 (쉼표로 구분 · 사진 인식 매칭용)</label><input type="text" name="aliases" value="${esc((it.aliases || []).join(', '))}" /></div>
       <div class="field"><label>메모</label><input type="text" name="note" value="${esc(it.note || '')}" /></div>
       <div class="field"><label class="row"><input type="checkbox" name="active" ${it.active !== false ? 'checked' : ''} /> 사용 중 (끄면 재고조사/발주에서 숨김)</label></div>
@@ -125,7 +136,8 @@ function readForm(form) {
   return {
     name: String(fd.get('name') || '').trim(),
     group: String(fd.get('group') || ''),
-    par: num('par'),
+    unitName: String(fd.get('unitName') || '').trim() || null,
+    par: num('par') == null ? null : Math.max(0, Math.round(num('par') * 2) / 2),
     parUnit: fd.get('parUnit') === 'box' ? 'box' : 'ea',
     boxSize: num('boxSize') || null,
     orderUnit: fd.get('orderUnit') === 'box' ? 'box' : 'ea',
@@ -148,6 +160,8 @@ function openForm(app, it, isNew) {
       e.preventDefault();
       const data = readForm(form);
       if (!data.name) return;
+      const grp = app.state.groups.find((g) => g.id === data.group);
+      data.book = grp ? grp.book || 'product' : it.book || 'product'; // 장부는 그룹을 따른다
       const units = new Set([data.parUnit, data.orderUnit, data.countUnit]);
       if (units.size > 1 && !data.boxSize) {
         app.toast('기준·세는·발주 단위가 다르면 "1박스 개수"를 입력해야 계산할 수 있습니다', 3500);
@@ -176,6 +190,19 @@ function openForm(app, it, isNew) {
   });
 }
 
+/** 같은 장부 안에서만 그룹 순서를 바꾼다 */
+function moveGroup(s, id, dir) {
+  const g = s.groups.find((x) => x.id === id);
+  if (!g) return;
+  const same = s.groups.filter((x) => (x.book || 'product') === (g.book || 'product'));
+  const i = same.indexOf(g);
+  const j = i + dir;
+  if (j < 0 || j >= same.length) return;
+  const a = s.groups.indexOf(same[i]);
+  const b = s.groups.indexOf(same[j]);
+  [s.groups[a], s.groups[b]] = [s.groups[b], s.groups[a]];
+}
+
 function move(arr, idx, dir) {
   const j = idx + dir;
   if (idx < 0 || j < 0 || j >= arr.length) return;
@@ -187,9 +214,11 @@ export const actions = {
     app.closeModal();
   },
   'item-new'(el, e, app) {
+    const book = bookOf(el.dataset.book || app.book()).id;
+    const group = app.state.groups.find((g) => (g.book || 'product') === book)?.id || app.state.groups[0]?.id || '';
     openForm(
       app,
-      { name: '', group: app.state.groups[0]?.id || '', par: null, parUnit: 'ea', boxSize: null, orderUnit: 'ea', countUnit: 'ea', minOrder: null, rule: null, aliases: [], note: '', active: true },
+      { name: '', book, group, par: null, parUnit: 'ea', boxSize: null, orderUnit: 'ea', countUnit: 'ea', minOrder: null, rule: null, aliases: [], unitName: null, note: '', active: true },
       true,
     );
   },
@@ -230,12 +259,13 @@ export const actions = {
     });
   },
   'group-add'(el, e, app) {
-    const title = prompt('새 그룹 이름');
+    const book = bookOf(el.dataset.book || app.book()).id;
+    const title = prompt(`새 그룹 이름 (${bookOf(book).short})`);
     if (!title?.trim()) return;
     app.update((s) => {
       let id = slugify(title);
       if (s.groups.some((g) => g.id === id)) id = `${id}-${uid()}`;
-      s.groups.push({ id, title: title.trim() });
+      s.groups.push({ id, title: title.trim(), book });
     });
   },
   'group-edit'(el, e, app) {
@@ -257,10 +287,10 @@ export const actions = {
     });
   },
   'group-up'(el, e, app) {
-    app.update((s) => move(s.groups, s.groups.findIndex((g) => g.id === el.dataset.id), -1));
+    app.update((s) => moveGroup(s, el.dataset.id, -1));
   },
   'group-down'(el, e, app) {
-    app.update((s) => move(s.groups, s.groups.findIndex((g) => g.id === el.dataset.id), 1));
+    app.update((s) => moveGroup(s, el.dataset.id, 1));
   },
   'items-reset'(el, e, app) {
     if (!confirm('품목과 그룹을 기본 시트 데이터로 되돌릴까요? 직접 수정한 품목 정보는 사라집니다.')) return;

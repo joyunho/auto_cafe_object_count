@@ -56,6 +56,11 @@ try {
   page.on('dialog', (d) => d.accept());
 
   const count = (id) => page.locator(`input[data-input="count"][data-id="${id}"]`);
+  // 빠른 버튼(0/예상/기준/지움)은 숫자 칸을 누른 줄에만 보이므로 먼저 그 줄에 포커스를 준다
+  const quick = async (id, val) => {
+    await count(id).focus();
+    await page.locator(`[data-action="count-set"][data-id="${id}"][data-val="${val}"]`).click();
+  };
   const state = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__cafeApp.state)));
 
   // 1. 첫 화면
@@ -63,7 +68,8 @@ try {
   await page.waitForSelector('.tabbar');
   assert.match(await page.locator('.topbar h1').textContent(), /재고관리/);
   const st0 = await state();
-  const activeCount = st0.items.filter((it) => it.active !== false).length;
+  const activeCount = st0.items.filter((it) => it.active !== false && (it.book || 'product') === 'product').length;
+  assert.equal(await page.locator('.seg button.on').textContent().then((t) => t.trim().replace(/\s+/g, ' ')), '제품 월·목', '장부 전환 기본값은 제품');
   assert.equal(await page.locator('.item-row').count(), activeCount, '활성 품목 수만큼 행이 있어야 함');
   assert.equal(await page.locator('.tabbar button.active').textContent().then((t) => t.trim()), '📋재고조사');
   await shot(page, 'count-empty');
@@ -73,8 +79,8 @@ try {
   await count('sparkling-water').fill('3');
   await page.locator('[data-action="count-inc"][data-id="ice-cream"]').click();
   await page.locator('[data-action="count-inc"][data-id="ice-cream"]').click();
-  await page.locator('[data-action="count-set"][data-id="ice-tea"][data-val="0"]').click();
-  await page.locator('[data-action="count-set"][data-id="cafe-syrup"][data-val="8"]').click();
+  await quick('ice-tea', '0');
+  await quick('cafe-syrup', '8');
   await page.locator('[data-action="count-dec"][data-id="yuja-cheong"]').click(); // 미입력 → 0
   await page.locator('[data-action="count-inc"][data-id="yuja-cheong"]').click();
   await page.locator('[data-action="count-inc"][data-id="yuja-cheong"]').click(); // 2
@@ -130,6 +136,36 @@ try {
   assert.equal(await page.locator('.order-line.overridden').count(), 0);
   log('박스 단위 품목 계산 · 재입력 시 수동 수정 해제');
 
+  // 5c. 자재 장부: 전환 → 따로 세고 따로 발주 (수요일)
+  await page.locator('.tabbar [data-tab="count"]').click();
+  await page.locator('[data-action="book-switch"][data-book="supply"]').click();
+  await page.waitForFunction(() => window.__cafeApp.state.ui.book === 'supply');
+  assert.match(await page.locator('.topbar .sub').textContent(), /자재/, '헤더에 장부 표시');
+  const supplyRows = await page.locator('.item-row').count();
+  assert.ok(supplyRows >= 30 && supplyRows < activeCount, `자재 품목만 표시 (${supplyRows})`);
+  assert.match(await page.locator('.item-row[data-row="trash-100l"] .name').textContent(), /기준.*2묶음/, '묶음 단위 기준 표시');
+  // 빠른 버튼은 숫자 칸을 누른 줄에만
+  assert.ok(!(await page.locator('.item-row[data-row="trash-100l"] .quick').isVisible()), '기본은 빠른 버튼 숨김');
+  await count('trash-100l').focus();
+  assert.ok(await page.locator('.item-row[data-row="trash-100l"] .quick').isVisible(), '포커스한 줄은 빠른 버튼 표시');
+  await count('trash-100l').fill('1');
+  await count('knock-box-bag').fill('1');
+  await page.waitForFunction(() => window.__cafeApp.activeSession().counts['trash-100l'] === 1);
+  assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().book), 'supply');
+  await page.locator('.tabbar [data-tab="order"]').click();
+  await page.waitForSelector('#order-text');
+  const supplyOrder = await page.locator('#order-text').textContent();
+  assert.match(supplyOrder, /씨앤비 발주 \(자재\)/, '자재 발주 제목');
+  assert.match(supplyOrder, /- 100L 쓰레기봉투\(일쓰\) 1묶음/, '묶음 단위 발주');
+  assert.match(supplyOrder, /- 넉박스 봉투 1묶음/, '기준 1.5묶음 − 1 = 0.5 → 1묶음');
+  assert.ok(!/유자청|탄산수/.test(supplyOrder), '자재 발주서에 제품이 섞이지 않음');
+  // 제품 장부로 돌아오면 입력값이 그대로
+  await page.locator('[data-action="book-switch"][data-book="product"]').click();
+  await page.waitForFunction(() => window.__cafeApp.state.ui.book === 'product');
+  await page.waitForSelector('#order-text');
+  assert.match(await page.locator('#order-text').textContent(), /- 배도라지차 1박스/, '제품 초안 유지');
+  log('자재 장부 전환 · 묶음 단위 · 장부별 발주서');
+
   // 6. 복사
   await page.locator('[data-action="order-copy"]').click();
   const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -175,7 +211,7 @@ try {
   assert.match(await page.locator('.item-row[data-id="sparkling-water"] .meta').textContent(), /기준 10개/);
   await shot(page, 'items');
   // 새 품목 추가
-  await page.locator('[data-action="item-new"]').click();
+  await page.locator('[data-action="item-new"][data-book="product"]').click();
   await page.locator('#item-form input[name="name"]').fill('테스트 우유');
   await page.locator('#item-form input[name="par"]').fill('4');
   await page.locator('#item-form button[type="submit"]').click();
@@ -241,14 +277,14 @@ try {
   assert.match(await page.locator('.item-row[data-row="sparkling-water"] .meta').textContent(), /예상 8개/);
   assert.ok((await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val]').count()) >= 3, '예상(N) 버튼');
   // 지난 수량으로 시작한 초안이라 이미 값이 있음 → 지운 뒤 "예상값 채우기"
-  await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val=""]').click();
+  await quick('sparkling-water', '');
   await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] == null);
   await page.locator('[data-action="count-fill-forecast"]').click();
   await page.locator('.toast', { hasText: '예상값으로 채웠습니다' }).waitFor({ timeout: 5000 });
   assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().counts['sparkling-water']), 8);
   assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().filled['sparkling-water']), true, '채운 값은 실측 아님으로 표시');
   // 직접 고치면 실측으로 바뀐다
-  await page.locator('[data-action="count-set"][data-id="sparkling-water"][data-val="0"]').click();
+  await quick('sparkling-water', '0');
   await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] === 0);
   assert.equal(await page.evaluate(() => !!window.__cafeApp.activeSession().filled['sparkling-water']), false);
   assert.match(await page.locator('.item-row[data-row="yuja-cheong"] .name').textContent(), /예상 OK|확인 필요/);

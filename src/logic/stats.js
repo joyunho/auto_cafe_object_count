@@ -20,7 +20,7 @@ export function dayNumber(dateStr) {
  * 품목별 소비 통계 (낱개 기준).
  * @returns {Record<itemId, {samples:number, avgPerDay:number|null, avgPerPeriod:number|null, lastCount:number|null, lastDate:string|null}>}
  */
-export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } = {}) {
+export function consumptionStats(items, sessions, orders, { periodDays = 3.5, periodDaysByBook = {} } = {}) {
   const submitted = sessions
     .filter((s) => s.status === 'submitted')
     .slice()
@@ -73,7 +73,7 @@ export function consumptionStats(items, sessions, orders, { periodDays = 3.5 } =
     result[item.id] = {
       samples: usages.length,
       avgPerDay,
-      avgPerPeriod: avgPerDay * periodDays,
+      avgPerPeriod: avgPerDay * (periodDaysByBook[item.book || 'product'] ?? periodDays),
       lastCount,
       lastDate,
     };
@@ -98,12 +98,25 @@ export function suggestPar(item, stat, { periodDays = 4, safetyFactor = 1.5, min
   return { suggested, currentPar, perPeriod: Math.round(perPeriod * 10) / 10 };
 }
 
-/** 최근 N회 조사에서 현재 수량이 0인 횟수(품절 빈도) */
-export function stockoutCount(itemId, sessions, n = 6) {
+/** 최근 N회 조사에서 현재 수량이 0인 횟수(품절 빈도). 그 품목을 실제로 센 조사만 센다 (다른 장부 조사는 제외) */
+export function stockoutCount(itemOrId, sessions, n = 6) {
+  const itemId = typeof itemOrId === 'string' ? itemOrId : itemOrId.id;
   const recent = sessions
-    .filter((s) => s.status === 'submitted')
+    .filter((s) => s.status === 'submitted' && s.counts?.[itemId] != null)
     .slice()
     .sort((a, b) => (a.date < b.date ? 1 : -1))
     .slice(0, n);
   return recent.filter((s) => s.counts?.[itemId] === 0).length;
+}
+
+/** 발주 요일 목록에서 가장 긴 발주 간격(일). [1,4] → 4, [3] → 7 */
+export function orderIntervalDays(orderDays = [1, 4]) {
+  const d = [...new Set(orderDays)].sort((a, b) => a - b);
+  if (!d.length) return 7;
+  let max = 0;
+  for (let i = 0; i < d.length; i++) {
+    const next = i + 1 < d.length ? d[i + 1] : d[0] + 7;
+    max = Math.max(max, next - d[i]);
+  }
+  return max;
 }

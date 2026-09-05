@@ -20,7 +20,7 @@ export const OUTPUT_SCHEMA = {
         type: 'object',
         properties: {
           name: { type: 'string', description: '품목명 (등록 품목 목록에 있는 이름을 우선 사용)' },
-          count: { type: 'integer', description: '수량 (0 이상의 정수)' },
+          count: { type: 'number', description: '수량 (0 이상, 0.5 단위 가능 — 예: 1.5묶음)' },
           unit: { type: 'string', enum: ['ea', 'box'], description: '수량 단위. "1box" 처럼 적혀 있으면 box' },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
           note: { type: 'string', description: '판독이 애매한 이유, 대안 값 등. 없으면 빈 문자열' },
@@ -110,7 +110,7 @@ export function sanitizeParsed(parsed) {
     .filter((it) => it && typeof it.name === 'string' && Number.isFinite(Number(it.count)))
     .map((it) => ({
       name: it.name.trim(),
-      count: Math.max(0, Math.round(Number(it.count))),
+      count: Math.max(0, Math.round(Number(it.count) * 2) / 2), // 0.5 단위
       unit: it.unit === 'box' ? 'box' : 'ea',
       confidence: ['high', 'medium', 'low'].includes(it.confidence) ? it.confidence : 'medium',
       note: typeof it.note === 'string' ? it.note : '',

@@ -2,6 +2,7 @@
 import { load, save, uid, exportJSON, defaultState, STORAGE_KEY } from './store.js';
 import { esc } from './ui/html.js';
 import { nextOrderDate, formatDate, weekdayKo } from './logic/order.js';
+import { bookOf, orderDaysFor } from './data/books.js';
 import * as countView from './ui/count.js';
 import * as orderView from './ui/order.js';
 import * as historyView from './ui/history.js';
@@ -64,19 +65,32 @@ export const app = {
     window.scrollTo(0, 0);
   },
 
-  /** 진행 중(초안) 세션을 돌려주고, 없으면 만든다 */
-  activeSession(create = true) {
+  /** 지금 보고 있는 장부(제품/자재) id */
+  book() {
+    return this.state.ui.book || 'product';
+  },
+  bookInfo() {
+    return bookOf(this.book());
+  },
+  orderDays(book = this.book()) {
+    return orderDaysFor(this.state.settings, book);
+  },
+  /** 장부의 진행 중(초안) 세션을 돌려주고, 없으면 만든다 */
+  activeSession(create = true, book = this.book()) {
     const s = this.state;
-    let sess = s.sessions.find((x) => x.id === s.ui.activeSessionId && x.status === 'draft');
-    if (!sess) sess = s.sessions.find((x) => x.status === 'draft');
+    const isDraft = (x) => x.status === 'draft' && (x.book || 'product') === book;
+    let sess = s.sessions.find((x) => x.id === s.ui.activeSessionId && isDraft(x));
+    if (!sess) sess = s.sessions.find(isDraft);
     const today = formatDate(new Date());
     if (!sess && create) {
       sess = {
         id: uid('s_'),
-        date: formatDate(nextOrderDate(new Date(), s.settings.orderDays)),
+        book,
+        date: formatDate(nextOrderDate(new Date(), this.orderDays(book))),
         status: 'draft',
         counts: {},
         overrides: {},
+        filled: {},
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -85,7 +99,7 @@ export const app = {
       this.persist();
     } else if (sess && sess.date < today && Object.keys(sess.counts || {}).length === 0) {
       // 아무것도 입력하지 않은 지난 초안은 다음 발주일로 옮긴다
-      sess.date = formatDate(nextOrderDate(new Date(), s.settings.orderDays));
+      sess.date = formatDate(nextOrderDate(new Date(), this.orderDays(book)));
       this.persist();
     }
     if (sess) s.ui.activeSessionId = sess.id;
@@ -135,7 +149,8 @@ export const app = {
   render() {
     const s = this.state;
     const tab = VIEWS[s.ui.tab] ? s.ui.tab : 'count';
-    const next = nextOrderDate(new Date(), s.settings.orderDays);
+    const book = this.bookInfo();
+    const next = nextOrderDate(new Date(), this.orderDays());
     const nextLabel = `${next.getMonth() + 1}/${next.getDate()} (${weekdayKo(next)})`;
     let body;
     try {
@@ -149,7 +164,7 @@ export const app = {
       <header class="topbar">
         <div>
           <h1>${esc(s.settings.storeName || '카페')} 재고관리</h1>
-          <div class="sub">다음 발주일 ${esc(nextLabel)} · ${esc(s.settings.supplierName || '')}</div>
+          <div class="sub">${esc(book.short)} 다음 발주일 ${esc(nextLabel)} · ${esc(s.settings.supplierName || '')}</div>
         </div>
         <div class="row">${VIEWS[tab].headerActions ? VIEWS[tab].headerActions(s) : ''}</div>
       </header>
@@ -195,6 +210,13 @@ export const app = {
     for (const v of Object.values(VIEWS)) this.registerView(v);
     this.registerView(photoView);
     this.actions.tab = (el) => this.go(el.dataset.tab);
+    this.actions['book-switch'] = (el) => {
+      const book = bookOf(el.dataset.book).id;
+      this.update((st) => {
+        st.ui.book = book;
+        st.ui.activeSessionId = null;
+      });
+    };
     this.actions['recovery-export'] = () => settingsView.downloadBackup(this, exportJSON(this.state));
     this.actions['recovery-reset'] = () => {
       if (!confirm('모든 데이터를 지우고 처음 상태로 돌릴까요?')) return;

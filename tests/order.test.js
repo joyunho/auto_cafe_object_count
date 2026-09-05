@@ -11,6 +11,8 @@ import {
   parInCountUnit,
   countToEach,
   unitsUnresolved,
+  formatLine,
+  unitLabel,
 } from '../src/logic/order.js';
 
 const ea = (over = {}) => ({ id: 'a', name: '탄산수', par: 8, parUnit: 'ea', boxSize: null, orderUnit: 'ea', rule: null, minOrder: null, ...over });
@@ -175,4 +177,36 @@ test('nextOrderDate: 월/목 중 가장 가까운 날 (오늘 포함)', () => {
   assert.equal(formatDate(nextOrderDate(new Date(2026, 8, 7))), '2026-09-07');
   // 2026-09-08 화요일 → 목요일
   assert.equal(formatDate(nextOrderDate(new Date(2026, 8, 8))), '2026-09-10');
+});
+
+test('자재: 기준 1.5묶음, 현재 1 → 1묶음 발주 (정수로 올림), 단위 이름 표시', () => {
+  const it = { id: 'knock', name: '넉박스 봉투', par: 1.5, parUnit: 'ea', boxSize: null, orderUnit: 'ea', countUnit: 'ea', unitName: '묶음' };
+  const l = calcOrderLine(it, 1);
+  assert.equal(l.qty, 1);
+  assert.equal(l.unitName, '묶음');
+  assert.match(l.reason, /0\.5묶음 부족/);
+  assert.equal(formatLine(l), '- 넉박스 봉투 1묶음');
+  assert.equal(calcOrderLine(it, 2).qty, 0);
+  assert.equal(calcOrderLine(it, 1.5).qty, 0);
+  assert.equal(unitLabel('ea', it), '묶음');
+  assert.equal(unitLabel('ea'), '개');
+  assert.equal(unitLabel('box', it), '박스');
+});
+
+test('묶음 단위 품목의 재발주점 문구와 최소 발주, 박스 품목의 0.5박스 표시', () => {
+  const rule = { id: 'r', name: 'R', par: 4, parUnit: 'ea', boxSize: null, orderUnit: 'ea', countUnit: 'ea', unitName: '묶음', rule: { type: 'reorderPoint', threshold: 1, orderQty: 2 } };
+  assert.match(calcOrderLine(rule, 0.5).reason, /1묶음 미만 → 2묶음 발주/);
+  assert.match(calcOrderLine(rule, 3).reason, /1묶음 이상 보유/);
+  const min = { id: 'm', name: 'M', par: 1.5, parUnit: 'ea', boxSize: null, orderUnit: 'ea', countUnit: 'ea', minOrder: 2, unitName: '묶음' };
+  assert.equal(calcOrderLine(min, 1).qty, 2);
+  // 전부 박스 단위(배도라지차): 0.5박스 남음 → 부족 1.5박스, 발주 2박스
+  const allBox = { id: 'b', name: 'B', par: 2, parUnit: 'box', boxSize: null, orderUnit: 'box', countUnit: 'box' };
+  const l = calcOrderLine(allBox, 0.5);
+  assert.equal(l.need, 1.5);
+  assert.equal(l.qty, 2);
+  assert.match(l.reason, /1\.5박스 부족/);
+  // 1박스 개수를 알아도 박스 기준 표시는 박스로
+  const allBox6 = { ...allBox, boxSize: 6 };
+  assert.match(calcOrderLine(allBox6, 1).reason, /1박스 부족/);
+  assert.equal(calcOrderLine(allBox6, 1).qty, 1);
 });

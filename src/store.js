@@ -1,5 +1,7 @@
 // 로컬 저장소 (localStorage) — 상태 로드/저장/백업/복원
 import { SEED_ITEMS, SEED_GROUPS, SEED_SETTINGS } from './data/items.js';
+import { SEED_SUPPLY_ITEMS, SEED_SUPPLY_GROUPS } from './data/supplies.js';
+import { BOOKS, DEFAULT_BOOK } from './data/books.js';
 
 export const STORAGE_KEY = 'cafe-inventory-v1';
 export const SAFETY_KEY = 'cafe-inventory-v1.before-import';
@@ -24,12 +26,13 @@ export function defaultState() {
   return {
     version: SCHEMA_VERSION,
     consumption: builtinModel(),
-    items: SEED_ITEMS.map((it) => ({ ...it })),
-    groups: SEED_GROUPS.map((g) => ({ ...g })),
+    items: [...SEED_ITEMS, ...SEED_SUPPLY_ITEMS].map((it) => ({ ...it })),
+    groups: [...SEED_GROUPS, ...SEED_SUPPLY_GROUPS].map((g) => ({ ...g })),
     sessions: [],
     orders: [],
-    settings: { ...SEED_SETTINGS },
-    ui: { tab: 'count', activeSessionId: null },
+    settings: { ...SEED_SETTINGS, orderDaysByBook: { ...SEED_SETTINGS.orderDaysByBook } },
+    seeded: { supply: true }, // 어떤 시드가 이미 들어갔는지 (한 번만 덧붙이기 위한 표시)
+    ui: { tab: 'count', book: DEFAULT_BOOK, activeSessionId: null },
   };
 }
 
@@ -63,25 +66,49 @@ export function migrate(raw) {
     settings: { ...base.settings, ...(isObj(raw.settings) ? raw.settings : {}) },
     ui: { ...base.ui, ...(isObj(raw.ui) ? raw.ui : {}) },
   };
-  state.items = objList(state.items).filter((it) => typeof it.id === 'string' && typeof it.name === 'string');
+  const bookIds = BOOKS.map((b) => b.id);
+  const bookOr = (b) => (bookIds.includes(b) ? b : DEFAULT_BOOK);
+  state.items = objList(state.items)
+    .filter((it) => typeof it.id === 'string' && typeof it.name === 'string')
+    .map((it) => ({ ...it, book: bookOr(it.book) }));
   if (!state.items.length) state.items = base.items;
-  state.groups = objList(state.groups).filter((g) => typeof g.id === 'string' && typeof g.title === 'string');
+  state.groups = objList(state.groups)
+    .filter((g) => typeof g.id === 'string' && typeof g.title === 'string')
+    .map((g) => ({ ...g, book: bookOr(g.book) }));
   if (!state.groups.length) state.groups = base.groups;
+  // 자재 장부가 없는 예전 데이터에는 자재 시트 시드를 한 번만 붙인다 (지웠다면 다시 붙이지 않음)
+  state.seeded = isObj(raw.seeded) ? { ...raw.seeded } : {}; // 기본 상태의 표시는 상속하지 않는다 (예전 데이터는 표시가 없음)
+  if (!state.seeded.supply) {
+    if (!state.items.some((it) => it.book === 'supply')) {
+      for (const g of SEED_SUPPLY_GROUPS) if (!state.groups.some((x) => x.id === g.id)) state.groups.push({ ...g });
+      for (const it of SEED_SUPPLY_ITEMS) if (!state.items.some((x) => x.id === it.id)) state.items.push({ ...it });
+    }
+    state.seeded.supply = true;
+  }
   state.sessions = objList(state.sessions)
     .filter((s) => typeof s.id === 'string')
     .map((s) => ({
       ...s,
       date: typeof s.date === 'string' ? s.date : '',
       status: s.status === 'submitted' ? 'submitted' : 'draft',
+      book: bookOr(s.book),
       counts: isObj(s.counts) ? s.counts : {},
       overrides: isObj(s.overrides) ? s.overrides : {},
       filled: isObj(s.filled) ? s.filled : {}, // 예상값·기준값으로 채운 품목 (실측 아님)
     }));
   state.orders = objList(state.orders)
     .filter((o) => typeof o.id === 'string')
-    .map((o) => ({ ...o, lines: objList(o.lines), text: typeof o.text === 'string' ? o.text : '' }));
+    .map((o) => ({ ...o, book: bookOr(o.book), lines: objList(o.lines), text: typeof o.text === 'string' ? o.text : '' }));
   const days = Array.isArray(state.settings.orderDays) ? state.settings.orderDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : [];
   state.settings.orderDays = days.length ? [...new Set(days)].sort() : [...SEED_SETTINGS.orderDays];
+  const byBook = isObj(state.settings.orderDaysByBook) ? state.settings.orderDaysByBook : {};
+  state.settings.orderDaysByBook = {};
+  for (const b of BOOKS) {
+    if (b.id === 'product') continue;
+    const d = Array.isArray(byBook[b.id]) ? byBook[b.id].map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x <= 6) : [];
+    state.settings.orderDaysByBook[b.id] = d.length ? [...new Set(d)].sort() : [...b.orderDays];
+  }
+  state.ui.book = bookOr(state.ui.book);
   for (const k of ['storeName', 'senderName', 'supplierName', 'orderTitle', 'apiKey']) {
     if (typeof state.settings[k] !== 'string') state.settings[k] = SEED_SETTINGS[k];
   }

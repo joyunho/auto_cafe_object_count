@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consumptionStats, suggestPar, stockoutCount, dayNumber } from '../src/logic/stats.js';
+import { consumptionStats, suggestPar, stockoutCount, dayNumber, orderIntervalDays } from '../src/logic/stats.js';
 
 const item = { id: 'a', name: '탄산수', par: 8, parUnit: 'ea', boxSize: null, orderUnit: 'ea' };
 const boxItem = { id: 'b', name: '아이스티', par: 6, parUnit: 'ea', boxSize: 6, orderUnit: 'box' };
@@ -87,4 +87,21 @@ test('stockoutCount: 최근 조사 중 0인 횟수', () => {
   ];
   assert.equal(stockoutCount('a', s), 2);
   assert.equal(stockoutCount('a', s, 1), 1);
+});
+
+test('orderIntervalDays: 발주 요일에서 가장 긴 간격', () => {
+  assert.equal(orderIntervalDays([1, 4]), 4); // 목→월
+  assert.equal(orderIntervalDays([3]), 7);
+  assert.equal(orderIntervalDays([1, 3, 5]), 3); // 금→월
+  assert.equal(orderIntervalDays([]), 7);
+});
+
+test('stockoutCount: 그 품목을 세지 않은 조사(다른 장부)는 창에 넣지 않는다', () => {
+  const s = [
+    { id: '1', date: '2026-01-01', status: 'submitted', counts: { a: 0 } },
+    { id: '2', date: '2026-01-02', status: 'submitted', counts: { b: 1 } }, // 자재 장부 조사
+    { id: '3', date: '2026-01-03', status: 'submitted', counts: { a: 0 } },
+  ];
+  assert.equal(stockoutCount({ id: 'a', book: 'product' }, s, 2), 2);
+  assert.equal(stockoutCount('a', s, 2), 2);
 });

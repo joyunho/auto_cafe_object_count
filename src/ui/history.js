@@ -1,18 +1,22 @@
 // 기록 탭: 지난 재고조사/발주, 소비량 통계, 기준 수량 제안
 import { esc, fmtDateKo, fmtDateTime } from './html.js';
-import { consumptionStats, suggestPar, stockoutCount } from '../logic/stats.js';
+import { consumptionStats, suggestPar, stockoutCount, orderIntervalDays } from '../logic/stats.js';
+import { orderDaysFor, BOOKS } from '../data/books.js';
 import { unitLabel, parInEach } from '../logic/order.js';
+import { bookOf } from '../data/books.js';
 
 export function render(s, app) {
   const submitted = s.sessions.filter((x) => x.status === 'submitted').slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  const stats = consumptionStats(s.items, s.sessions, s.orders);
+  // 장부별 발주 간격: 제품(월·목) 3~4일, 자재(수) 7일
+  const periodDaysByBook = Object.fromEntries(BOOKS.map((b) => [b.id, orderIntervalDays(orderDaysFor(s.settings, b.id))]));
+  const stats = consumptionStats(s.items, s.sessions, s.orders, { periodDaysByBook });
   const activeItems = s.items.filter((it) => it.active !== false);
 
   const suggestions = activeItems
-    .map((it) => ({ it, sug: suggestPar(it, stats[it.id]) }))
+    .map((it) => ({ it, sug: suggestPar(it, stats[it.id], { periodDays: periodDaysByBook[it.book || 'product'] }) }))
     .filter((x) => x.sug);
   const stockouts = activeItems
-    .map((it) => ({ it, n: stockoutCount(it.id, s.sessions) }))
+    .map((it) => ({ it, n: stockoutCount(it, s.sessions) }))
     .filter((x) => x.n >= 2)
     .sort((a, b) => b.n - a.n);
   const topUse = activeItems
@@ -38,7 +42,7 @@ export function render(s, app) {
         }
         ${
           suggestions.length
-            ? `<div class="mb"><div class="small" style="font-weight:600">기준 수량 제안 <span class="tiny muted">(4일 소비량 × 1.5 안전계수)</span></div>
+            ? `<div class="mb"><div class="small" style="font-weight:600">기준 수량 제안 <span class="tiny muted">(발주 간격 소비량 × 1.5 안전계수)</span></div>
               <div class="table-wrap"><table class="simple"><thead><tr><th>품목</th><th class="num">현재 기준</th><th class="num">제안</th><th></th></tr></thead><tbody>
               ${suggestions
                 .map(
@@ -52,7 +56,7 @@ export function render(s, app) {
         ${
           topUse.length
             ? `<details><summary class="small">소비 속도 상위 품목</summary>
-              <div class="table-wrap"><table class="simple"><thead><tr><th>품목</th><th class="num">하루 평균</th><th class="num">발주주기(3.5일)</th><th class="num">표본</th></tr></thead><tbody>
+              <div class="table-wrap"><table class="simple"><thead><tr><th>품목</th><th class="num">하루 평균</th><th class="num">발주 간격당</th><th class="num">표본</th></tr></thead><tbody>
               ${topUse
                 .map(
                   (x) => `<tr><td>${esc(x.it.name)}</td><td class="num">${x.st.avgPerDay.toFixed(2)}</td><td class="num">${x.st.avgPerPeriod.toFixed(1)}</td><td class="num">${x.st.samples}</td></tr>`,
@@ -77,12 +81,12 @@ function sessionHtml(s, sess) {
     .filter((it) => sess.counts[it.id] != null || order?.lines.some((l) => l.itemId === it.id))
     .map((it) => {
       const line = order?.lines.find((l) => l.itemId === it.id);
-      return `<tr><td>${esc(it.name)}</td><td class="num">${sess.counts[it.id] ?? '-'}</td><td class="num">${line ? `${line.qty}${unitLabel(line.unit)}` : ''}</td></tr>`;
+      return `<tr><td>${esc(it.name)}</td><td class="num">${sess.counts[it.id] ?? '-'}</td><td class="num">${line ? `${line.qty}${unitLabel(line.unit, it)}` : ''}</td></tr>`;
     })
     .join('');
   return `
     <details class="mt">
-      <summary>${esc(fmtDateKo(sess.date))} ${esc(sess.date)} <span class="pill ${order ? 'ok' : ''}">${order ? `발주 ${order.lines.length}품목` : '발주 없음'}</span>
+      <summary><span class="pill accent">${esc(bookOf(sess.book).short)}</span> ${esc(fmtDateKo(sess.date))} ${esc(sess.date)} <span class="pill ${order ? 'ok' : ''}">${order ? `발주 ${order.lines.length}품목` : '발주 없음'}</span>
         <span class="tiny muted">${esc(fmtDateTime(sess.submittedAt))}</span></summary>
       ${order ? `<pre class="order-text small mt">${esc(order.text)}</pre>` : ''}
       <div class="row mt wrap">
@@ -113,10 +117,12 @@ export const actions = {
   'history-reuse'(el, e, app) {
     const src = app.state.sessions.find((x) => x.id === el.dataset.id);
     if (!src) return;
-    const draft = app.state.sessions.find((x) => x.status === 'draft');
+    const book = src.book || 'product';
+    const draft = app.state.sessions.find((x) => x.status === 'draft' && (x.book || 'product') === book);
     if (draft && Object.keys(draft.counts).length && !confirm('진행 중인 재고조사 입력을 덮어쓸까요?')) return;
     app.update((s) => {
-      const sess = app.activeSession();
+      s.ui.book = book;
+      const sess = app.activeSession(true, book);
       sess.counts = { ...src.counts };
       sess.overrides = {};
       sess.updatedAt = new Date().toISOString();

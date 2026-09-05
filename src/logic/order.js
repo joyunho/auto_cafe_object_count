@@ -60,7 +60,7 @@ export function unitsUnresolved(item) {
  */
 export function calcOrderLine(item, current) {
   const unit = item.orderUnit || (item.boxSize ? 'box' : 'ea');
-  const base = { itemId: item.id, name: item.name, current, currentEach: null, par: item.par, parUnit: item.parUnit || 'ea', unit };
+  const base = { itemId: item.id, name: item.name, current, currentEach: null, par: item.par, parUnit: item.parUnit || 'ea', unit, unitName: item.unitName || null };
   const hasRule = !!(item.rule && item.rule.type === 'reorderPoint');
 
   // 기준도 규칙도 없는 품목은 수량을 세어도 계산할 것이 없다 — 미입력 경고 대신 "기준 없음"으로 안내
@@ -92,11 +92,11 @@ export function calcOrderLine(item, current) {
         ...base,
         need: parEach != null ? Math.max(0, parEach - currentEach) : null,
         qty,
-        reason: `${threshold}개 미만 → ${qty}${unitLabel(unit)} 발주`,
+        reason: `${threshold}${unitLabel('ea', item)} 미만 → ${qty}${unitLabel(unit, item)} 발주`,
         auto: true,
       };
     }
-    return { ...base, need: parEach != null ? Math.max(0, parEach - currentEach) : 0, qty: 0, reason: `${threshold}개 이상 보유`, auto: true };
+    return { ...base, need: parEach != null ? Math.max(0, parEach - currentEach) : 0, qty: 0, reason: `${threshold}${unitLabel('ea', item)} 이상 보유`, auto: true };
   }
 
   if (parEach == null) {
@@ -113,13 +113,14 @@ export function calcOrderLine(item, current) {
     const size = item.boxSize || 1;
     qty = Math.ceil(need / size);
   } else {
-    qty = need;
+    qty = Math.ceil(need); // 기준이 1.5묶음처럼 소수여도 발주는 정수로
   }
   if (item.minOrder && qty < item.minOrder) qty = item.minOrder;
 
   const curLabel = (item.countUnit || 'ea') === 'box' ? `${current}박스` : `${current}`;
   const parLabel = (item.parUnit || 'ea') === 'box' ? `${item.par}박스` : `${parEach}`;
-  const needLabel = unit === 'box' && (item.parUnit || 'ea') === 'box' && (item.countUnit || 'ea') === 'box' ? `${qty}박스` : `${need}개`;
+  // 모두 박스 단위면 부족분도 박스로 (0.5박스처럼 소수도 그대로), 아니면 낱개로
+  const needLabel = unit === 'box' && (item.parUnit || 'ea') === 'box' && (item.countUnit || 'ea') === 'box' ? `${need / (item.boxSize || 1)}박스` : `${need}${unitLabel('ea', item)}`;
   return { ...base, need, qty, reason: `기준 ${parLabel} − 현재 ${curLabel} = ${needLabel} 부족`, auto: true };
 }
 
@@ -141,8 +142,10 @@ export function calcOrder(items, counts, overrides = {}) {
     });
 }
 
-export function unitLabel(unit) {
-  return unit === 'box' ? '박스' : '개';
+/** 단위 표시. 품목에 unitName(묶음·롤 등)이 있으면 낱개 단위 대신 그 이름을 쓴다 */
+export function unitLabel(unit, item) {
+  if (unit === 'box') return '박스';
+  return item?.unitName || '개';
 }
 
 /** 발주할 것이 있는 라인만 */
@@ -193,7 +196,7 @@ export function formatOrderText(lines, opts = {}) {
 }
 
 export function formatLine(l) {
-  const u = l.unit === 'box' ? '박스' : '개';
+  const u = l.unit === 'box' ? '박스' : l.unitName || '개';
   return `- ${l.name} ${l.qty}${u}`;
 }
 

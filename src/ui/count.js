@@ -1,14 +1,15 @@
-// 재고조사 탭
+// 재고조사 탭 — 장부(제품/자재)별로 품목을 세고, 종이 시트처럼 "이름 · 빨간 기준 · 검은 숫자"만 보이게 한다
 import { esc, fmtDateKo } from './html.js';
 import { parInCountUnit, unitLabel, unitsUnresolved, formatDate } from '../logic/order.js';
 import { forecastAll } from '../logic/forecast.js';
+import { BOOKS } from '../data/books.js';
 
-function activeItems(s) {
-  return s.items.filter((it) => it.active !== false);
+function activeItems(s, book) {
+  return s.items.filter((it) => it.active !== false && (it.book || 'product') === book);
 }
 
 export function progress(s, sess) {
-  const items = activeItems(s);
+  const items = activeItems(s, sess.book || 'product');
   const done = items.filter((it) => sess.counts[it.id] != null).length;
   return { done, total: items.length };
 }
@@ -19,16 +20,30 @@ export function forecasts(s) {
   return forecastAll(s.items, s.consumption, s.sessions, s.orders, formatDate(new Date()));
 }
 
+/** 장부 전환 (제품 / 자재) */
+export function bookSwitch(s) {
+  const cur = s.ui.book || 'product';
+  return `<div class="seg" role="tablist" aria-label="장부">${BOOKS.map(
+    (b) => `<button type="button" role="tab" data-action="book-switch" data-book="${b.id}" class="${b.id === cur ? 'on' : ''}" aria-selected="${b.id === cur}">${esc(b.short)} <span class="tiny">${esc(b.dayLabel)}</span></button>`,
+  ).join('')}</div>`;
+}
+
+/** 이름 옆에 붙는 기준 수량 (시트의 빨간 숫자) */
+function parInline(it) {
+  if (it.par == null) return '<span class="par-inline muted">기준 없음</span>';
+  const u = it.parUnit === 'box' ? '박스' : unitLabel('ea', it);
+  return `<span class="par-inline">기준 <b class="par">${it.par}</b>${esc(u)}</span>`;
+}
+
+/** 부가 정보 줄 — 있을 때만 표시 */
 function itemMeta(it, f) {
   const parts = [];
-  if (it.par != null) parts.push(`기준 <span class="par">${it.par}</span>${it.parUnit === 'box' ? '박스' : '개'}`);
-  else parts.push('기준 없음');
   if (it.boxSize) parts.push(`1박스=${it.boxSize}개`);
-  if (it.rule?.type === 'reorderPoint') parts.push(`${it.rule.threshold}개 미만이면 ${it.rule.orderQty}${unitLabel(it.orderUnit)} 발주`);
+  if (it.rule?.type === 'reorderPoint') parts.push(`${it.rule.threshold}${unitLabel('ea', it)} 미만이면 ${it.rule.orderQty}${unitLabel(it.orderUnit, it)} 발주`);
   if (it.countUnit === 'box') parts.push('<b>박스 단위로 세기</b>');
   if (unitsUnresolved(it)) parts.push('<span style="color:var(--warn)">1박스 개수 미설정 — 품목 탭에서 입력</span>');
   if (f) {
-    const u = it.countUnit === 'box' ? '박스' : '개';
+    const u = it.countUnit === 'box' ? '박스' : unitLabel('ea', it);
     const when = f.days === 0 ? '오늘' : f.days === 1 ? '어제' : `${f.days}일 전`;
     parts.push(`예상 <b>${f.expected}${u}</b> <span class="tiny">(${f.low}~${f.high}, ${when} ${f.basis.count}${u}${f.basis.received ? ` + 입고 ${f.basis.received}` : ''}${f.estimated ? ', 포장 크기 추정' : ''})</span>`);
     if (f.stale) parts.push('<span style="color:var(--warn)">실측한 지 오래됨</span>');
@@ -40,25 +55,26 @@ function itemMeta(it, f) {
 function rowHtml(it, val, f) {
   const has = val != null;
   const parCount = parInCountUnit(it);
-  const unit = it.countUnit === 'box' ? '박스' : '';
+  const unit = it.countUnit === 'box' ? '박스' : it.unitName || '';
   const check = f?.needsCheck;
+  const meta = itemMeta(it, f);
   return `
     <div class="item-row ${has ? 'done' : ''} ${check ? 'needs-check' : ''}" data-row="${esc(it.id)}">
-      <div>
-        <div class="name">${esc(it.name)}${check ? ' <span class="pill warn">확인 필요</span>' : f ? ' <span class="pill ok">예상 OK</span>' : ''}</div>
-        <div class="meta">${itemMeta(it, f)}</div>
+      <div class="item-main" data-action="row-focus" data-id="${esc(it.id)}">
+        <div class="name">${esc(it.name)} ${parInline(it)}${check ? ' <span class="pill warn">확인 필요</span>' : f ? ' <span class="pill ok">예상 OK</span>' : ''}</div>
+        ${meta ? `<div class="meta">${meta}</div>` : ''}
       </div>
-      <div>
+      <div class="item-ctl">
         <div class="stepper" role="group" aria-label="${esc(it.name)} 수량">
           <button type="button" data-action="count-dec" data-id="${esc(it.id)}" aria-label="1 빼기">−</button>
-          <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" data-input="count" data-id="${esc(it.id)}"
-            value="${has ? val : ''}" placeholder="${f ? f.expected : '–'}" class="${has ? '' : 'empty'}" aria-label="${esc(it.name)} 현재 수량${unit ? ' (박스)' : ''}" />
+          <input type="number" inputmode="decimal" min="0" step="0.5" data-input="count" data-id="${esc(it.id)}"
+            value="${has ? val : ''}" placeholder="${f ? f.expected : '–'}" class="${has ? '' : 'empty'}" aria-label="${esc(it.name)} 현재 수량${unit ? ` (${esc(unit)})` : ''}" />
           <button type="button" data-action="count-inc" data-id="${esc(it.id)}" aria-label="1 더하기">+</button>
         </div>
         <div class="quick">
           <button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="0">0</button>
           ${f ? `<button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="${f.expected}">예상(${f.expected})</button>` : ''}
-          ${parCount != null ? `<button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="${parCount}">기준(${parCount}${unit})</button>` : ''}
+          ${parCount != null ? `<button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="${parCount}">기준(${parCount}${esc(unit)})</button>` : ''}
           <button type="button" data-action="count-set" data-id="${esc(it.id)}" data-val="" title="입력 지우기">지움</button>
         </div>
       </div>
@@ -66,47 +82,49 @@ function rowHtml(it, val, f) {
 }
 
 export function render(s, app) {
+  const book = app.book();
+  const info = app.bookInfo();
   const sess = app.activeSession();
   const { done, total } = progress(s, sess);
   const pct = total ? Math.round((done / total) * 100) : 0;
-  const fc = forecasts(s);
+  const fc = book === 'product' ? forecasts(s) : {};
   const nForecast = Object.keys(fc).length;
   const nCheck = Object.values(fc).filter((f) => f.needsCheck).length;
   // 예상값이 하나도 없으면(모델 지움 등) 필터를 적용하지 않는다 — 체크박스도 안 보이므로 품목이 사라지면 안 됨
   const onlyCheck = nForecast > 0 && !!s.ui.countOnlyCheck;
   const visible = (it) => !onlyCheck || fc[it.id]?.needsCheck || (sess.counts[it.id] == null && !fc[it.id]);
+  const items = activeItems(s, book);
   const groups = s.groups
-    .map((g) => ({ g, items: activeItems(s).filter((it) => it.group === g.id && visible(it)) }))
+    .filter((g) => (g.book || 'product') === book)
+    .map((g) => ({ g, items: items.filter((it) => it.group === g.id && visible(it)) }))
     .filter((x) => x.items.length);
-  const ungrouped = activeItems(s).filter((it) => !s.groups.some((g) => g.id === it.group) && visible(it));
+  const ungrouped = items.filter((it) => !s.groups.some((g) => g.id === it.group) && visible(it));
   const stale = sess.date < formatDate(new Date());
 
   return `
-    <section class="card">
+    ${bookSwitch(s)}
+    <section class="card compact">
       <div class="row between wrap">
         <div>
-          <h2 style="margin:0">재고조사 <span class="muted small">${esc(fmtDateKo(sess.date))} 발주분</span></h2>
-          <div class="small muted" id="progress-text">${done}/${total} 품목 입력 (${pct}%)</div>
+          <h2 style="margin:0">${esc(info.short)} 재고조사 <span class="muted small">${esc(fmtDateKo(sess.date))} 발주분</span></h2>
+          <div class="small muted" id="progress-text">${done}/${total} 입력 (${pct}%)${book === 'supply' ? ' · 지하창고 기준' : ''}</div>
         </div>
-        <input type="date" value="${esc(sess.date)}" data-change="session-date" aria-label="발주일" style="min-height:40px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surface)" />
+        <input type="date" value="${esc(sess.date)}" data-change="session-date" aria-label="발주일" class="date-input" />
       </div>
       ${stale ? `<p class="small mt" style="color:var(--warn);margin-bottom:0">지난 발주일(${esc(sess.date)})로 진행 중입니다. 날짜를 확인하세요.</p>` : ''}
       <div class="progress mt" aria-hidden="true"><div id="progress-bar" style="width:${pct}%"></div></div>
       ${
         nForecast
-          ? `<p class="small mt" style="margin-bottom:0"><span class="pill ${nCheck ? 'warn' : 'ok'}">확인 필요 ${nCheck}</span> <span class="muted">예상 재고가 있는 품목 ${nForecast}개 중 발주 결정이 갈릴 수 있는 ${nCheck}개만 직접 세면 됩니다. 나머지는 "예상값 채우기"로 넣고 넘어가도 됩니다.</span></p>
+          ? `<p class="small mt" style="margin-bottom:0"><span class="pill ${nCheck ? 'warn' : 'ok'}">확인 필요 ${nCheck}</span> <span class="muted">예상값이 있는 ${nForecast}개 중 ${nCheck}개만 직접 세면 됩니다.</span></p>
              <label class="row small mt"><input type="checkbox" data-change="count-only-check" ${onlyCheck ? 'checked' : ''}/> 확인 필요 품목과 예상값 없는 품목만 보기</label>`
-          : s.consumption
-            ? `<p class="tiny muted mt" style="margin-bottom:0">소비 모델은 있지만 아직 확정한 재고조사가 없어 예상 재고를 계산할 수 없습니다. 이번 조사를 확정하면 다음부터 예상값이 나옵니다.</p>`
-            : ''
+          : ''
       }
-      <div class="row mt wrap">
-        <button type="button" class="btn primary" data-action="photo-open">📷 사진으로 자동 입력</button>
-        ${nForecast ? `<button type="button" class="btn" data-action="count-fill-forecast" title="입력 안 한 품목을 예상값으로">예상값 채우기</button>` : ''}
-        <button type="button" class="btn" data-action="count-fill-par" title="입력 안 한 품목을 모두 기준 수량으로">빈칸=기준</button>
-        <button type="button" class="btn ghost" data-action="count-clear">전체 지움</button>
+      <div class="toolbar mt">
+        <button type="button" class="btn sm" data-action="photo-open">📷 사진</button>
+        ${nForecast ? `<button type="button" class="btn sm" data-action="count-fill-forecast" title="입력 안 한 품목을 예상값으로">예상값 채우기</button>` : ''}
+        <button type="button" class="btn sm" data-action="count-fill-par" title="입력 안 한 품목을 모두 기준 수량으로">빈칸=기준</button>
+        <button type="button" class="btn sm ghost" data-action="count-clear">전체 지움</button>
       </div>
-      <p class="tiny muted mt" style="margin-bottom:0">현재 남은 수량을 입력하면 발주 탭에서 발주 수량이 자동 계산됩니다. 입력은 자동 저장됩니다.</p>
     </section>
 
     ${groups
@@ -124,19 +142,34 @@ export function render(s, app) {
         : ''
     }
     ${onlyCheck && !groups.length && !ungrouped.length ? `<div class="card empty">확인이 필요한 품목이 없습니다. 예상값을 채우고 발주서로 넘어가세요.</div>` : ''}
+    ${!groups.length && !ungrouped.length && !onlyCheck ? `<div class="card empty">이 장부에 품목이 없습니다. 품목 탭에서 추가하세요.</div>` : ''}
 
     <div class="sticky-actions">
-      <button type="button" class="btn primary block" data-action="tab" data-tab="order">발주서 확인 →</button>
+      <button type="button" class="btn primary block" data-action="tab" data-tab="order">${esc(info.short)} 발주서 확인 →</button>
     </div>`;
 }
 
-/** 값 갱신 + DOM 부분 갱신 (포커스 유지). 수량이 바뀌면 그 품목의 수동 발주 수정은 무효가 된다. */
+/** 숫자 칸에 포커스가 가면 그 줄만 빠른 버튼을 펼친다 (iOS는 버튼 탭으로 포커스가 안 바뀌므로 클래스로 관리) */
+export function afterRender(s, app) {
+  const main = app.root?.querySelector('main.view');
+  if (!main) return;
+  main.addEventListener('focusin', (e) => {
+    const row = e.target.closest?.('.item-row');
+    if (row && e.target.matches('input[data-input="count"]')) setActiveRow(row);
+  });
+}
+
+function setActiveRow(row) {
+  document.querySelectorAll('.item-row.active').forEach((r) => r !== row && r.classList.remove('active'));
+  row.classList.add('active');
+}
+
 function setCount(app, id, val) {
   const s = app.state;
   const sess = app.activeSession();
   let v = val;
   if (v === '' || v == null || Number.isNaN(v)) v = null;
-  else v = Math.max(0, Math.round(Number(v)));
+  else v = Math.max(0, Math.round(Number(v) * 2) / 2); // 0.5 단위까지 (자재 "1.5묶음")
   app.set(() => {
     if (v == null) delete sess.counts[id];
     else sess.counts[id] = v;
@@ -154,10 +187,9 @@ function setCount(app, id, val) {
   const { done, total } = progress(s, sess);
   const pct = total ? Math.round((done / total) * 100) : 0;
   const pt = document.getElementById('progress-text');
-  if (pt) pt.textContent = `${done}/${total} 품목 입력 (${pct}%)`;
+  if (pt) pt.textContent = `${done}/${total} 입력 (${pct}%)${(sess.book || 'product') === 'supply' ? ' · 지하창고 기준' : ''}`;
   const pb = document.getElementById('progress-bar');
   if (pb) pb.style.width = `${pct}%`;
-  // 그룹 카운터
   const groupHead = row?.closest('.group')?.querySelector('.group-head .tiny');
   if (groupHead) {
     const ids = [...row.closest('.item-list').querySelectorAll('[data-row]')].map((r) => r.dataset.row);
@@ -187,15 +219,24 @@ export const changes = {
 };
 
 export const actions = {
+  'row-focus'(el, e) {
+    if (e.target.closest('button, input')) return;
+    const row = el.closest('.item-row');
+    if (!row) return;
+    setActiveRow(row);
+    row.querySelector('input[data-input="count"]')?.focus();
+  },
   'count-inc'(el, e, app) {
     const sess = app.activeSession();
     const cur = sess.counts[el.dataset.id];
     setCount(app, el.dataset.id, cur == null ? 1 : cur + 1);
+    setActiveRow(el.closest('.item-row'));
   },
   'count-dec'(el, e, app) {
     const sess = app.activeSession();
     const cur = sess.counts[el.dataset.id];
     setCount(app, el.dataset.id, cur == null ? 0 : Math.max(0, cur - 1));
+    setActiveRow(el.closest('.item-row'));
   },
   'count-set'(el, e, app) {
     setCount(app, el.dataset.id, el.dataset.val === '' ? null : Number(el.dataset.val));
@@ -206,7 +247,7 @@ export const actions = {
       const sess = app.activeSession();
       const fc = forecasts(s);
       sess.filled ||= {};
-      for (const it of activeItems(s)) {
+      for (const it of activeItems(s, sess.book || 'product')) {
         if (sess.counts[it.id] == null && fc[it.id]) {
           sess.counts[it.id] = fc[it.id].expected;
           sess.filled[it.id] = true; // 실측이 아니므로 다음 예상 계산의 기준으로 쓰지 않는다
@@ -223,7 +264,7 @@ export const actions = {
     app.update((s) => {
       const sess = app.activeSession();
       sess.filled ||= {};
-      for (const it of activeItems(s)) {
+      for (const it of activeItems(s, sess.book || 'product')) {
         if (sess.counts[it.id] == null) {
           const p = parInCountUnit(it);
           if (p != null) {

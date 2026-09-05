@@ -58,7 +58,7 @@ test('parseResponse: JSON 텍스트를 정리해서 돌려준다', () => {
   };
   const out = parseResponse(res);
   assert.equal(out.items.length, 2);
-  assert.deepEqual(out.items[0], { name: '유자청', count: 2, unit: 'ea', confidence: 'high', note: '' });
+  assert.deepEqual(out.items[0], { name: '유자청', count: 2.5, unit: 'ea', confidence: 'high', note: '' }); // 0.5 단위로 반올림
   assert.deepEqual(out.items[1], { name: '아이스티', count: 0, unit: 'box', confidence: 'low', note: 'x' });
   assert.deepEqual(out.unreadable, ['잣']);
   assert.equal(out.model, 'claude-opus-5');
