@@ -6,7 +6,7 @@
 import { esc } from './html.js';
 import { extractCounts, extractWithSample, detectSample, fileToBase64Image } from '../ai/extract.js';
 import { matchRecognized } from '../logic/match.js';
-import { toEach } from '../logic/order.js';
+import { toEach, unitLabel } from '../logic/order.js';
 
 const ui = { images: [], result: null, busy: false, error: null, sample: undefined, abort: null };
 
@@ -82,7 +82,7 @@ function resultHtml(s, app) {
                     <div class="tiny muted">인식: "${esc(m.recognizedName)}" ${m.unit === 'box' ? '(박스)' : ''}${m.note ? ` · ${esc(m.note)}` : ''}${cur != null ? ` · 현재 입력값 ${cur}` : ''}</div>
                     ${ok ? '' : `<div class="tiny" style="color:var(--warn)">1박스 개수가 등록되지 않아 ${m.unit === 'box' ? '박스를 개수로' : '개수를 박스로'} 바꿀 수 없습니다. 품목 탭에서 1박스 개수를 입력하세요.</div>`}
                   </div>
-                  <div class="row" style="gap:4px"><input type="number" min="0" inputmode="numeric" data-idx="${i}" value="${m.count}" aria-label="수량" ${ok ? '' : 'disabled'} /><span class="tiny">${m.unit === 'box' ? '박스' : '개'}</span></div>
+                  <div class="row" style="gap:4px"><input type="number" min="0" step="0.5" inputmode="decimal" data-idx="${i}" value="${m.count}" aria-label="수량" ${ok ? '' : 'disabled'} /><span class="tiny">${m.unit === 'box' ? '박스' : unitLabel('ea', it)}</span></div>
                 </div>`;
               })
               .join('')
@@ -109,8 +109,9 @@ function rerender(app) {
 
 /** 인식 프롬프트에 넘길 품목 목록 — 그룹 이름을 붙여 같은 이름끼리 구분 */
 function promptItems(s) {
+  const book = s.ui.book || 'product';
   return s.items
-    .filter((it) => it.active !== false)
+    .filter((it) => it.active !== false && (it.book || 'product') === book)
     .map((it) => ({ ...it, groupTitle: s.groups.find((g) => g.id === it.group)?.title || '' }));
 }
 
@@ -212,7 +213,7 @@ export const actions = {
         let v = raw;
         if (m.unit === 'box' && it.countUnit !== 'box') v = toEach(it, raw, 'box');
         else if (m.unit === 'ea' && it.countUnit === 'box') v = raw / it.boxSize;
-        sess.counts[m.itemId] = Math.max(0, Math.round(v));
+        sess.counts[m.itemId] = Math.max(0, Math.round(v * 2) / 2); // 0.5 단위 (자재 "1.5묶음")
         if (sess.filled) delete sess.filled[m.itemId];
         if (sess.overrides) delete sess.overrides[m.itemId];
         applied++;

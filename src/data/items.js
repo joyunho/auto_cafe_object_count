@@ -11,18 +11,20 @@
 //    (두 품목에 같은 별칭 "레몬"을 주면 사진 인식 결과를 어느 쪽에도 배정할 수 없어 별칭은 두지 않았습니다.)
 // ※ 그룹은 시트에 없는 앱의 분류입니다. 시트 칸 순서와 조금 다를 수 있습니다.
 
+// 제품(재료) 장부 — 시트 3장
 export const SEED_GROUPS = [
-  { id: 'cheong', title: '과일청 · 아이스크림', sheet: 1 },
-  { id: 'juice', title: '주스 · 생수', sheet: 1 },
-  { id: 'coffee', title: '원두 · 우유', sheet: 2 },
-  { id: 'syrup', title: '탄산 · 시럽 · 소스', sheet: 2 },
-  { id: 'tea', title: '티(차)', sheet: 2 },
-  { id: 'topping', title: '토핑 · 기타', sheet: 2 },
-  { id: 'brunch', title: '브런치', sheet: 3 },
-  { id: 'ramen', title: '라면', sheet: 3 },
+  { id: 'cheong', title: '과일청 · 아이스크림', sheet: 1, book: 'product' },
+  { id: 'juice', title: '주스 · 생수', sheet: 1, book: 'product' },
+  { id: 'coffee', title: '원두 · 우유', sheet: 2, book: 'product' },
+  { id: 'syrup', title: '탄산 · 시럽 · 소스', sheet: 2, book: 'product' },
+  { id: 'tea', title: '티(차)', sheet: 2, book: 'product' },
+  { id: 'topping', title: '토핑 · 기타', sheet: 2, book: 'product' },
+  { id: 'brunch', title: '브런치', sheet: 3, book: 'product' },
+  { id: 'ramen', title: '라면', sheet: 3, book: 'product' },
 ];
 
 const base = {
+  book: 'product',
   parUnit: 'ea',
   boxSize: null,
   orderUnit: 'ea',
@@ -139,7 +141,8 @@ export const SEED_SETTINGS = {
   senderName: '',
   supplierName: '씨앤비',
   orderTitle: '씨앤비 발주',
-  orderDays: [1, 4], // 월, 목
+  orderDays: [1, 4], // 월, 목 (제품)
+  orderDaysByBook: { supply: [3] }, // 자재: 수요일
   apiKey: '',
   photoMode: 'sheet',
 };

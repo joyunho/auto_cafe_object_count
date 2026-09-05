@@ -15,9 +15,11 @@ export function render(s) {
       <div class="field"><label>담당자 이름 (발주 문자 끝에 표시)</label><input type="text" data-change="setting" data-key="senderName" value="${esc(st.senderName)}" /></div>
       <div class="field"><label>거래처</label><input type="text" data-change="setting" data-key="supplierName" value="${esc(st.supplierName)}" /></div>
       <div class="field"><label>발주 문자 제목</label><input type="text" data-change="setting" data-key="orderTitle" value="${esc(st.orderTitle)}" /></div>
-      <div class="field"><label>발주 요일</label>
-        <div class="row wrap">${DAYS.map((d, i) => `<label class="row small" style="gap:4px"><input type="checkbox" data-change="order-day" data-day="${i}" ${st.orderDays.includes(i) ? 'checked' : ''}/>${d}</label>`).join('')}</div>
-        <div class="hint">새 재고조사의 기본 발주일을 계산할 때 씁니다.</div></div>
+      <div class="field"><label>제품(재료) 발주 요일</label>
+        <div class="row wrap">${DAYS.map((d, i) => `<label class="row small" style="gap:4px"><input type="checkbox" data-change="order-day" data-day="${i}" ${st.orderDays.includes(i) ? 'checked' : ''}/>${d}</label>`).join('')}</div></div>
+      <div class="field"><label>자재(소모품) 발주 요일</label>
+        <div class="row wrap">${DAYS.map((d, i) => `<label class="row small" style="gap:4px"><input type="checkbox" data-change="order-day" data-book="supply" data-day="${i}" ${(st.orderDaysByBook?.supply || [3]).includes(i) ? 'checked' : ''}/>${d}</label>`).join('')}</div>
+        <div class="hint">장부별로 새 재고조사의 기본 발주일을 계산할 때 씁니다.</div></div>
     </section>
 
     <section class="card">
@@ -134,6 +136,16 @@ export const changes = {
   'order-day'(el, e, app) {
     app.update((s) => {
       const d = Number(el.dataset.day);
+      const book = el.dataset.book;
+      if (book) {
+        s.settings.orderDaysByBook ||= {};
+        const set = new Set(s.settings.orderDaysByBook[book] || []);
+        if (el.checked) set.add(d);
+        else set.delete(d);
+        s.settings.orderDaysByBook[book] = [...set].sort();
+        if (!s.settings.orderDaysByBook[book].length) s.settings.orderDaysByBook[book] = [3];
+        return;
+      }
       const set = new Set(s.settings.orderDays);
       if (el.checked) set.add(d);
       else set.delete(d);

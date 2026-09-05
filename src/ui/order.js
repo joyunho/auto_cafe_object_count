@@ -2,15 +2,20 @@
 import { esc, fmtDateKo } from './html.js';
 import { calcOrder, linesToOrder, formatOrderText, unitLabel } from '../logic/order.js';
 import { uid } from '../store.js';
+import { bookOf } from '../data/books.js';
+import { bookSwitch } from './count.js';
+
+const bookItems = (s, book) => s.items.filter((it) => (it.book || 'product') === (book || 'product'));
 
 export function buildLines(s, sess) {
-  return calcOrder(s.items, sess.counts, sess.overrides || {});
+  return calcOrder(bookItems(s, sess.book), sess.counts, sess.overrides || {});
 }
 
 export function orderText(s, sess, lines) {
-  const groups = s.groups.map((g) => ({ title: g.title, itemIds: s.items.filter((it) => it.group === g.id).map((it) => it.id) }));
+  const book = sess.book || 'product';
+  const groups = s.groups.filter((g) => (g.book || 'product') === book).map((g) => ({ title: g.title, itemIds: s.items.filter((it) => it.group === g.id).map((it) => it.id) }));
   return formatOrderText(lines, {
-    title: s.settings.orderTitle,
+    title: `${s.settings.orderTitle}${book === 'product' ? '' : ` (${bookOf(book).short})`}`,
     date: fmtDateKo(sess.date) + ` ${sess.date}`,
     store: s.settings.storeName,
     sender: s.settings.senderName,
@@ -18,10 +23,9 @@ export function orderText(s, sess, lines) {
   });
 }
 
+/** 모든 장부의 진행 중 초안에서 발주할 품목 수 (탭 배지) */
 export function pendingCount(s) {
-  const sess = s.sessions.find((x) => x.status === 'draft');
-  if (!sess) return 0;
-  return linesToOrder(buildLines(s, sess)).length;
+  return s.sessions.filter((x) => x.status === 'draft').reduce((n, sess) => n + linesToOrder(buildLines(s, sess)).length, 0);
 }
 
 /** 기본 보기: 발주할 것 + 직접 수정한 것(0으로 고친 것도 되돌릴 수 있게) */
@@ -46,9 +50,10 @@ export function render(s, app) {
   const rest = visible.filter((l) => !s.groups.some((g) => s.items.find((it) => it.id === l.itemId)?.group === g.id));
 
   return `
+    ${bookSwitch(s)}
     <section class="card">
       <div class="row between wrap">
-        <h2 style="margin:0">발주서 <span class="muted small">${esc(fmtDateKo(sess.date))}</span></h2>
+        <h2 style="margin:0">${esc(app.bookInfo().short)} 발주서 <span class="muted small">${esc(fmtDateKo(sess.date))}</span></h2>
         <span class="pill accent" id="order-count-pill">${toOrder.length}개 품목 발주</span>
       </div>
       ${
@@ -101,7 +106,7 @@ export function render(s, app) {
 
 function lineHtml(l, s) {
   const it = s.items.find((x) => x.id === l.itemId);
-  const curLabel = l.current == null ? '미입력' : `현재 ${l.current}${it?.countUnit === 'box' ? '박스' : '개'}`;
+  const curLabel = l.current == null ? '미입력' : `현재 ${l.current}${it?.countUnit === 'box' ? '박스' : unitLabel('ea', it)}`;
   return `
     <div class="order-line ${l.overridden ? 'overridden' : ''}" data-line="${esc(l.itemId)}">
       <div>
@@ -110,7 +115,7 @@ function lineHtml(l, s) {
       </div>
       <div class="qty">
         <input type="number" inputmode="numeric" min="0" value="${l.qty}" data-change="order-qty" data-id="${esc(l.itemId)}" aria-label="${esc(l.name)} 발주 수량" />
-        <span class="small">${unitLabel(l.unit)}</span>
+        <span class="small">${unitLabel(l.unit, it)}</span>
         ${l.overridden ? `<button type="button" class="btn sm ghost" data-action="order-reset" data-id="${esc(l.itemId)}" title="자동 계산값으로" aria-label="자동 계산값으로 되돌리기">↺</button>` : ''}
       </div>
     </div>`;
@@ -142,16 +147,18 @@ function patchOrderView(app, itemId) {
   const n = linesToOrder(lines).length;
   const pill = document.getElementById('order-count-pill');
   if (pill) pill.textContent = `${n}개 품목 발주`;
+  // 탭 배지는 전체 장부 합계 (app.render와 같은 정의)
+  const total = pendingCount(s);
   const tabBtn = document.querySelector('.tabbar [data-tab="order"]');
   if (tabBtn) {
     let badge = tabBtn.querySelector('.badge');
-    if (n > 0) {
+    if (total > 0) {
       if (!badge) {
         badge = document.createElement('span');
         badge.className = 'badge';
         tabBtn.appendChild(badge);
       }
-      badge.textContent = String(n);
+      badge.textContent = String(total);
     } else if (badge) badge.remove();
   }
   const submit = document.querySelector('[data-action="order-submit"]');
@@ -240,6 +247,7 @@ export const actions = {
       st.orders.push({
         id: uid('o_'),
         sessionId: sess.id,
+        book: sess.book || 'product',
         date: sess.date,
         lines: toOrder.map((l) => ({ itemId: l.itemId, name: l.name, qty: l.qty, unit: l.unit, current: l.current })),
         text,
