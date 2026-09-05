@@ -31,9 +31,7 @@ jobs:
           # 배포마다 서비스 워커 버전을 바꿔 새 캐시가 설치되게 한다
           sed -i "s/const VERSION = '[^']*';/const VERSION = '${GITHUB_SHA::8}';/" dist/sw.js
           grep -q "${GITHUB_SHA::8}" dist/sw.js
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true # Pages가 아직 켜져 있지 않으면 켜기를 시도 (권한이 없으면 Settings → Pages에서 수동 설정)
+      - uses: actions/configure-pages@v5 # Pages가 꺼져 있으면 여기서 실패합니다 → Settings → Pages → Source를 GitHub Actions로
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

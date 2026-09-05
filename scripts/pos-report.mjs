@@ -238,7 +238,7 @@ const html = `<!doctype html>
 <div class="callout warn">
   <div class="t">포장 크기 확인 (숫자가 바로 바뀝니다)</div>
   <ul style="margin:0;padding-left:5mm">
-    <li><strong>탄산수</strong> 1병 용량과 발주 단위 — 에이드에 연 ${n0(sparklingL)}L(하루 ${n1(sparklingL / 365)}L, 여름 최대 ${n1((sparkling?.peakPerDay || 0) / 1000)}L). 500ml 병이면 하루 ${n0(sparklingBottlesPerDay)}병이라 시트 기준 ${parCell(sparkling)}은 하루치뿐 → 기준 단위가 박스(또는 큰 병)로 보입니다. 확인 전에는 예상 재고에서 뺐습니다.</li>
+    <li><strong>탄산수</strong> 1병 용량과 발주 단위 — 에이드에 연 ${n0(sparklingL)}L(하루 ${n1(sparklingL / 365)}L, 여름 최대 ${n1((sparkling?.peakPerDay || 0) / 1000)}L). 500ml 병이면 하루 ${n0(sparklingBottlesPerDay)}병이라 시트 기준 ${sparkling ? parCell(sparkling) : '–'}은 하루치뿐 → 기준 단위가 박스(또는 큰 병)로 보입니다. 확인 전에는 예상 재고에서 뺐습니다.</li>
     <li><strong>딸기청·블루베리청</strong> 1단지 무게 (2kg 가정)</li>
     <li><strong>배도라지차</strong> 1박스 병 수 (470g 병 기준 연 ${n0(a.items.find((r) => r.itemId === 'pear-bellflower-tea')?.totalUnits)}병)</li>
     <li><strong>디카페인 콜드브루·미숫가루</strong> 1봉 무게 (1kg 가정)</li>
