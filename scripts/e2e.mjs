@@ -69,7 +69,7 @@ try {
   assert.match(await page.locator('.topbar h1').textContent(), /재고관리/);
   const st0 = await state();
   const activeCount = st0.items.filter((it) => it.active !== false && (it.book || 'product') === 'product').length;
-  assert.equal(await page.locator('.seg button.on').textContent().then((t) => t.trim().replace(/\s+/g, ' ')), '제품 월·목', '장부 전환 기본값은 제품');
+  assert.equal(await page.locator('.seg button.on').textContent().then((t) => t.trim().replace(/\s+/g, ' ')), '제품 월·목 발주', '장부 전환 기본값은 제품');
   assert.equal(await page.locator('.item-row').count(), activeCount, '활성 품목 수만큼 행이 있어야 함');
   assert.equal(await page.locator('.tabbar button.active').textContent().then((t) => t.trim()), '📋재고조사');
   await shot(page, 'count-empty');
@@ -88,23 +88,36 @@ try {
   assert.equal(await count('yuja-cheong').inputValue(), '2');
   assert.equal(await count('cafe-syrup').inputValue(), '8');
   assert.match(await page.locator('#progress-text').textContent(), new RegExp(`^5/${activeCount} `));
-  // 세는 즉시 줄에 발주 수량이, 위에는 발주 예정 개수가, 그룹 칩에는 진행이 보인다
-  assert.match(await page.locator('.item-row[data-row="sparkling-water"] .order-pill').textContent(), /발주 5개/);
-  assert.match(await page.locator('.item-row[data-row="cafe-syrup"] .order-pill').textContent(), /충분/);
-  assert.match(await page.locator('#pending-pill').textContent(), /발주 예정 4/);
+  // 세는 즉시 기준 숫자 아래 칸에 발주 수량이 보이고(충분하면 단위만), 그룹 칩에는 진행이 보인다
+  assert.match(await page.locator('.item-row[data-row="sparkling-water"] .order-hint').textContent(), /발주 5개/);
+  assert.equal(await page.locator('.item-row[data-row="cafe-syrup"] .order-hint').count(), 0, '기준과 같으면 발주 표시 없음');
+  assert.equal(await page.locator('.item-row[data-row="cafe-syrup"] .par-sub').textContent().then((t) => t.trim()), '개', '발주 없으면 단위만');
+  assert.equal(await page.locator('.item-row[data-row="sparkling-water"] .par-col .par').textContent(), '8', '기준 숫자는 자기 열에');
   assert.match(await page.locator('.chip[data-id="cheong"]').textContent(), /2\/5/);
+  assert.equal(await page.locator('.chip:not(.part):not(.done) b').count(), 0, '아직 안 센 그룹 칩에는 분수 없음');
   assert.ok((await page.locator('.chips .chip').count()) >= 5, '그룹 칩');
-  // 촘촘히(기본)에서는 부가 정보가 숨고, 넓게 보기로 바꾸면 보인다
-  assert.ok(await page.locator('#count-list').evaluate((el) => el.classList.contains('dense')), '기본은 촘촘히');
-  assert.ok(!(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible()), '촘촘히에서는 메타 숨김');
+  // 세지 않은 줄과 센 줄의 높이가 같아야 입력할 때 목록이 튀지 않는다
+  const rowH = (id) => page.locator(`.item-row[data-row="${id}"]`).evaluate((el) => el.getBoundingClientRect().height);
+  assert.equal(await rowH('sparkling-water'), await rowH('cheonggyul-cheong'), '센 줄과 안 센 줄의 높이가 같음');
+  // 작게 보기(기본) ↔ 크게 보기: ⋯ 메뉴에서 바꾼다. 부가 정보는 두 모드 모두 누른 줄에서만 보인다
+  assert.ok(await page.locator('#count-list').evaluate((el) => el.classList.contains('dense')), '기본은 작게 보기');
+  assert.ok(!(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible()), '작게 보기에서는 메타 숨김');
+  await page.locator('details.menu summary').click();
+  assert.match(await page.locator('[data-action="count-dense-toggle"]').textContent(), /크게 보기/);
   await page.locator('[data-action="count-dense-toggle"]').click();
   await page.waitForFunction(() => window.__cafeApp.state.ui.countDense === false);
-  assert.ok(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible(), '넓게 보기에서는 메타 표시');
+  assert.ok(!(await page.locator('#count-list').evaluate((el) => el.classList.contains('dense'))), '크게 보기로 전환');
+  assert.ok(!(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible()), '크게 보기에서도 누르지 않은 줄의 메타는 숨김');
+  await count('cheonggyul-cheong').focus();
+  assert.ok(await page.locator('.item-row[data-row="cheonggyul-cheong"] .meta').isVisible(), '누른 줄에서는 메타 표시');
   await shot(page, 'count-wide');
+  await page.locator('details.menu summary').click();
+  assert.match(await page.locator('[data-action="count-dense-toggle"]').textContent(), /작게 보기/);
   await page.locator('[data-action="count-dense-toggle"]').click();
   await page.waitForFunction(() => window.__cafeApp.state.ui.countDense !== false);
+  assert.ok(await page.locator('#count-list').evaluate((el) => el.classList.contains('dense')), '작게 보기로 복귀');
   await shot(page, 'count-filled');
-  log('수량 입력 · 진행률 · 줄별 발주 표시 · 그룹 칩 · 촘촘히/넓게');
+  log('수량 입력 · 진행률 · 줄별 발주 표시 · 그룹 칩 · 작게/크게 보기');
 
   // 3. 새로고침 후에도 유지
   await page.reload();
@@ -158,7 +171,8 @@ try {
   assert.match(await page.locator('.topbar .sub').textContent(), /자재/, '헤더에 장부 표시');
   const supplyRows = await page.locator('.item-row').count();
   assert.ok(supplyRows >= 30 && supplyRows < activeCount, `자재 품목만 표시 (${supplyRows})`);
-  assert.match(await page.locator('.item-row[data-row="trash-100l"] .name').textContent(), /기준.*2묶음/, '묶음 단위 기준 표시');
+  assert.equal(await page.locator('.item-row[data-row="trash-100l"] .par-col .par').textContent(), '2', '기준 숫자');
+  assert.match(await page.locator('.item-row[data-row="trash-100l"] .par-sub').textContent(), /묶음/, '묶음 단위 기준 표시');
   // 빠른 버튼은 숫자 칸을 누른 줄에만
   assert.ok(!(await page.locator('.item-row[data-row="trash-100l"] .quick').isVisible()), '기본은 빠른 버튼 숨김');
   await count('trash-100l').focus();
@@ -243,7 +257,8 @@ try {
   assert.match(await page.locator('.topbar h1').textContent(), /테스트점 재고관리/);
   log('설정 저장 · 헤더 반영');
 
-  // 12. 사진 모달 (API 키 없음 안내)
+  // 12. 사진 모달 (API 키 없음 안내) — ⋯ 메뉴 안에 있다
+  await page.locator('details.menu summary').click();
   await page.locator('[data-action="photo-open"]').click();
   await page.waitForSelector('.modal');
   assert.match(await page.locator('.modal').textContent(), /API 키를 먼저 입력/);
@@ -294,6 +309,7 @@ try {
   // 지난 수량으로 시작한 초안이라 이미 값이 있음 → 지운 뒤 "예상값 채우기"
   await quick('sparkling-water', '');
   await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] == null);
+  await page.locator('details.menu summary').click();
   await page.locator('[data-action="count-fill-forecast"]').click();
   await page.locator('.toast', { hasText: '예상값으로 채웠습니다' }).waitFor({ timeout: 5000 });
   assert.equal(await page.evaluate(() => window.__cafeApp.activeSession().counts['sparkling-water']), 8);
@@ -302,7 +318,7 @@ try {
   await quick('sparkling-water', '0');
   await page.waitForFunction(() => window.__cafeApp.activeSession().counts['sparkling-water'] === 0);
   assert.equal(await page.evaluate(() => !!window.__cafeApp.activeSession().filled['sparkling-water']), false);
-  assert.match(await page.locator('.item-row[data-row="yuja-cheong"] .name').textContent(), /예상 OK|확인 필요/);
+  assert.match(await page.locator('.item-row[data-row="yuja-cheong"] .meta').textContent(), /예상 \d/, '예상값이 있는 줄의 부가 정보');
   // 모델을 지우면 "확인 필요만 보기"가 켜져 있어도 품목이 사라지지 않는다
   await page.locator('input[data-change="count-only-check"]').check();
   await page.locator('.tabbar [data-tab="settings"]').click();
