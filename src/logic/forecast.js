@@ -16,7 +16,7 @@ export function rateFor(model, itemId, dateStr) {
   if (sameMonth != null) return sameMonth;
   // 다른 해의 같은 달
   const mm = ym.slice(5);
-  const key = Object.keys(m.perDay || {}).find((k) => k.slice(5) === mm);
+  const key = Object.keys(m.perDay || {}).filter((k) => k.slice(5) === mm).sort().at(-1); // 가장 최근 해
   if (key) return m.perDay[key];
   return m.avgPerDay ?? null;
 }
@@ -43,23 +43,42 @@ export function consumedBetween(model, itemId, lastDate, today) {
   return { consumed, days, rate: last };
 }
 
+/** 실제로 센 날짜: 확정 시각(이 기기 기준 날짜)과 발주일 중 이른 쪽 (토요일에 세고 월요일 발주분으로 확정하는 경우) */
+function countedDate(s) {
+  if (typeof s.submittedAt === 'string') {
+    const d = new Date(s.submittedAt);
+    if (!Number.isNaN(d.getTime())) {
+      const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (local < s.date) return local;
+    }
+  }
+  return s.date;
+}
+
+/** 확인해야 할 만큼 오래된 실측 (일) — 발주 간격(3~4일)의 3배쯤 */
+export const STALE_DAYS = 14;
+
 /**
- * 마지막 확정 조사값과 그 뒤 입고량을 찾는다 (품목의 세는 단위).
+ * 마지막으로 "직접 센" 값과 그 뒤 입고량을 찾는다 (품목의 세는 단위).
+ * 예상값·기준값으로 채운 값(sess.filled)은 실측이 아니므로 건너뛴다.
  */
 export function lastKnown(item, sessions, orders) {
-  const submitted = sessions.filter((s) => s.status === 'submitted' && s.counts?.[item.id] != null).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const submitted = sessions
+    .filter((s) => s.status === 'submitted' && s.counts?.[item.id] != null && !s.filled?.[item.id])
+    .map((s) => ({ s, d: countedDate(s) }))
+    .sort((a, b) => (a.d !== b.d ? (a.d < b.d ? 1 : -1) : String(b.s.submittedAt || '').localeCompare(String(a.s.submittedAt || ''))));
   if (!submitted.length) return null;
-  const s = submitted[0];
+  const { s, d } = submitted[0];
   let received = 0;
   for (const o of orders) {
-    if (o.date < s.date) continue;
+    if (o.date < d) continue;
     for (const l of o.lines || []) {
       if (l.itemId !== item.id) continue;
       const each = toEach(item, l.qty, l.unit);
       received += (item.countUnit || 'ea') === 'box' ? each / (item.boxSize || 1) : each;
     }
   }
-  return { count: s.counts[item.id], date: s.date, received };
+  return { count: s.counts[item.id], date: d, received };
 }
 
 /**
@@ -85,8 +104,12 @@ export function forecastItem(item, model, sessions, orders, today) {
   const qtyLow = calcOrderLine(item, low).qty;
   const qtyHigh = calcOrderLine(item, high).qty;
   const qtyExp = calcOrderLine(item, expected).qty;
-  const needsCheck = qtyLow !== qtyHigh || qtyExp !== qtyLow;
-  return { expected, low, high, days, ratePerDay: (rate ?? 0) * perCount, basis, needsCheck, qtyLow, qtyHigh };
+  // 오차 범위가 0 아래로 내려가면(이미 떨어졌을 수 있음) 0으로 잘려 범위가 좁아 보이므로 확인 대상.
+  // 실측이 너무 오래됐어도 확인 대상.
+  const crossesZero = expectedRaw - band < 0;
+  const stale = days > STALE_DAYS;
+  const needsCheck = qtyLow !== qtyHigh || qtyExp !== qtyLow || crossesZero || stale;
+  return { expected, low, high, days, ratePerDay: (rate ?? 0) * perCount, basis, needsCheck, crossesZero, stale, qtyLow, qtyHigh };
 }
 
 /** 모든 활성 품목의 예상값 */
@@ -108,7 +131,7 @@ export function validateModel(obj) {
     if (!v || typeof v !== 'object') continue;
     const perDay = {};
     for (const [k, n] of Object.entries(v.perDay || {})) if (/^\d{4}-\d{2}$/.test(k) && Number.isFinite(n) && n >= 0) perDay[k] = n;
-    const avg = Number.isFinite(v.avgPerDay) ? v.avgPerDay : Object.values(perDay).length ? Object.values(perDay).reduce((a, b) => a + b, 0) / Object.values(perDay).length : null;
+    const avg = Number.isFinite(v.avgPerDay) && v.avgPerDay >= 0 ? v.avgPerDay : Object.values(perDay).length ? Object.values(perDay).reduce((a, b) => a + b, 0) / Object.values(perDay).length : null;
     if (avg == null) continue;
     items[id] = { perDay, avgPerDay: avg };
   }

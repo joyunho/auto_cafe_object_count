@@ -31,6 +31,8 @@ function itemMeta(it, f) {
     const u = it.countUnit === 'box' ? '박스' : '개';
     const when = f.days === 0 ? '오늘' : f.days === 1 ? '어제' : `${f.days}일 전`;
     parts.push(`예상 <b>${f.expected}${u}</b> <span class="tiny">(${f.low}~${f.high}, ${when} ${f.basis.count}${u}${f.basis.received ? ` + 입고 ${f.basis.received}` : ''})</span>`);
+    if (f.stale) parts.push('<span style="color:var(--warn)">실측한 지 오래됨</span>');
+    else if (f.crossesZero) parts.push('<span style="color:var(--warn)">떨어졌을 수 있음</span>');
   }
   return parts.join(' · ');
 }
@@ -68,15 +70,16 @@ export function render(s, app) {
   const { done, total } = progress(s, sess);
   const pct = total ? Math.round((done / total) * 100) : 0;
   const fc = forecasts(s);
-  const onlyCheck = !!s.ui.countOnlyCheck;
-  const visible = (it) => !onlyCheck || fc[it.id]?.needsCheck || sess.counts[it.id] == null && !fc[it.id];
+  const nForecast = Object.keys(fc).length;
+  const nCheck = Object.values(fc).filter((f) => f.needsCheck).length;
+  // 예상값이 하나도 없으면(모델 지움 등) 필터를 적용하지 않는다 — 체크박스도 안 보이므로 품목이 사라지면 안 됨
+  const onlyCheck = nForecast > 0 && !!s.ui.countOnlyCheck;
+  const visible = (it) => !onlyCheck || fc[it.id]?.needsCheck || (sess.counts[it.id] == null && !fc[it.id]);
   const groups = s.groups
     .map((g) => ({ g, items: activeItems(s).filter((it) => it.group === g.id && visible(it)) }))
     .filter((x) => x.items.length);
   const ungrouped = activeItems(s).filter((it) => !s.groups.some((g) => g.id === it.group) && visible(it));
   const stale = sess.date < formatDate(new Date());
-  const nForecast = Object.keys(fc).length;
-  const nCheck = Object.values(fc).filter((f) => f.needsCheck).length;
 
   return `
     <section class="card">
@@ -138,6 +141,7 @@ function setCount(app, id, val) {
     if (v == null) delete sess.counts[id];
     else sess.counts[id] = v;
     if (sess.overrides) delete sess.overrides[id];
+    if (sess.filled) delete sess.filled[id]; // 직접 입력한 값은 실측
     sess.updatedAt = new Date().toISOString();
   });
   const row = document.querySelector(`[data-row="${CSS.escape(id)}"]`);
@@ -201,9 +205,11 @@ export const actions = {
     app.update((s) => {
       const sess = app.activeSession();
       const fc = forecasts(s);
+      sess.filled ||= {};
       for (const it of activeItems(s)) {
         if (sess.counts[it.id] == null && fc[it.id]) {
           sess.counts[it.id] = fc[it.id].expected;
+          sess.filled[it.id] = true; // 실측이 아니므로 다음 예상 계산의 기준으로 쓰지 않는다
           if (sess.overrides) delete sess.overrides[it.id];
           n++;
         }
@@ -216,11 +222,13 @@ export const actions = {
     let n = 0;
     app.update((s) => {
       const sess = app.activeSession();
+      sess.filled ||= {};
       for (const it of activeItems(s)) {
         if (sess.counts[it.id] == null) {
           const p = parInCountUnit(it);
           if (p != null) {
             sess.counts[it.id] = p;
+            sess.filled[it.id] = true; // 기준값으로 채운 것도 실측이 아님
             if (sess.overrides) delete sess.overrides[it.id];
             n++;
           }
@@ -236,6 +244,7 @@ export const actions = {
       const sess = app.activeSession();
       sess.counts = {};
       sess.overrides = {};
+      sess.filled = {};
       sess.updatedAt = new Date().toISOString();
     });
   },

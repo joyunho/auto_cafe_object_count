@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { consumptionByIngredient, consumptionByItem, suggestParFromRate, seasonality, findRecipe, indexRecipes } from '../src/logic/consumption.js';
 
+// 계산 검증용 가짜 레시피 (실제 레시피 수치가 아님)
 const recipes = [
-  { menu: '바닐라라떼', variant: 'ICE', ingredients: [{ name: '우유', qty: 175, unit: 'ml' }, { name: '바닐라시럽', qty: 45, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
-  { menu: '바닐라라떼', variant: 'HOT', ingredients: [{ name: '스팀우유', qty: 310, unit: 'ml' }, { name: '바닐라시럽', qty: 45, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
+  { menu: '바닐라라떼', variant: 'ICE', ingredients: [{ name: '우유', qty: 150, unit: 'ml' }, { name: '바닐라시럽', qty: 30, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
+  { menu: '바닐라라떼', variant: 'HOT', ingredients: [{ name: '스팀우유', qty: 200, unit: 'ml' }, { name: '바닐라시럽', qty: 30, unit: 'g' }, { name: '에스프레소샷', qty: 1, unit: 'shot' }] },
   { menu: '티백 캐모마일', variant: 'HOT', ingredients: [{ name: '티백 캐모마일', qty: 1, unit: 'bag' }] },
 ];
 const maps = {
@@ -61,10 +62,10 @@ test('findRecipe: 변형이 없으면 있는 쪽으로', () => {
 
 test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시 그룹, 미연결', () => {
   const { byIngredient, unmapped, ignored, decafCups } = consumptionByIngredient(sales, recipes, maps);
-  assert.equal(byIngredient['바닐라시럽'].months['2026-01'], 120 * 45);
-  assert.equal(byIngredient['바닐라시럽'].months['2026-02'], 50 * 45);
-  assert.equal(byIngredient['우유'].months['2026-01'], 100 * 175);
-  assert.equal(byIngredient['스팀우유'].months['2026-01'], 20 * 310);
+  assert.equal(byIngredient['바닐라시럽'].months['2026-01'], 120 * 30);
+  assert.equal(byIngredient['바닐라시럽'].months['2026-02'], 50 * 30);
+  assert.equal(byIngredient['우유'].months['2026-01'], 100 * 150);
+  assert.equal(byIngredient['스팀우유'].months['2026-01'], 20 * 200);
   assert.equal(byIngredient['에스프레소샷'].months['2026-01'], 120 + 10);
   assert.equal(byIngredient['티백 캐모마일'].months['2026-01'], 40);
   assert.equal(byIngredient['@item:evian'].months['2026-02'], 7);
@@ -83,11 +84,11 @@ test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시
 test('consumptionByItem: 포장 단위 환산, 밀도, 원두 분리, 일평균', () => {
   const { byIngredient, decafCups } = consumptionByIngredient(sales, recipes, maps);
   const { byItem } = consumptionByItem(sales.months, byIngredient, decafCups, maps, items);
-  // 바닐라시럽: 5400g / 1.3 = 4153.8ml → 4.15병 (1월)
-  assert.ok(Math.abs(byItem['vanilla-syrup'].monthly['2026-01'] - 5400 / 1.3 / 1000) < 1e-9);
+  // 바닐라시럽: 3600g / 1.3 = 2769.2ml → 2.77병 (1월)
+  assert.ok(Math.abs(byItem['vanilla-syrup'].monthly['2026-01'] - 3600 / 1.3 / 1000) < 1e-9);
   assert.equal(byItem['vanilla-syrup'].assumed, true);
-  // 우유: 17500 + 6200 = 23700ml → 23.7병
-  assert.ok(Math.abs(byItem['milk'].monthly['2026-01'] - 23.7) < 1e-9);
+  // 우유: 15000 + 4000 = 19000ml → 19병
+  assert.ok(Math.abs(byItem['milk'].monthly['2026-01'] - 19) < 1e-9);
   // 원두: 130샷 × 18g = 2.34kg (시트에 원두/디카페인이 한 줄이라 합산), 그중 30샷 디카페인 = 0.54kg
   assert.ok(Math.abs(byItem['beans'].monthly['2026-01'] - 2.34) < 1e-9);
   assert.ok(Math.abs(byItem['beans'].decafRaw['2026-01'] - 540) < 1e-9);

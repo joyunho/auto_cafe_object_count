@@ -99,6 +99,7 @@ const ignoredList = a.ignored || [];
 const item = (id) => a.items.find((r) => r.itemId === id);
 const sparkling = item('sparkling-water');
 const sparklingL = sparkling ? sparkling.totalRaw / 1000 : null;
+const sparklingBottlesPerDay = sparklingL ? Math.round((sparklingL * 1000) / 500 / 365) : null; // 500ml 병이라고 가정했을 때
 const dropWords = (s) => s.replace(/\(1box>6\)/, '');
 
 const rowsHtml = withPkg
@@ -197,7 +198,7 @@ const html = `<!doctype html>
 </div>
 
 <h3>계산 방법</h3>
-<p>상품별 월 판매 잔 수 × 레시피 사용량(1펌프 15g, 1스쿱 15g, 우유 4칸 175ml 등 인쇄 기준) = 재료 소비량(g·ml·개). 이것을 레시피 5쪽 구매 정보의 포장 크기(유자청 2.2kg, 모닌 시럽 1L, 캐모마일 20봉 등)로 나눠 <strong>낱개 수</strong>로 바꿨습니다.
+<p>상품별 월 판매 잔 수 × 레시피 사용량(펌프·스쿱·칸 표기를 레시피의 g·ml 기준으로 환산) = 재료 소비량(g·ml·개). 이것을 레시피 구매 정보의 포장 크기(단지·병·봉 수)로 나눠 <strong>낱개 수</strong>로 바꿨습니다.
 시럽류는 g→ml 환산에 밀도 1.3을, 우유는 1.03을 썼습니다. 에스프레소 1샷 원두 18g, "샷 추가"는 1샷, 에스프레소 단품은 싱글 1샷·더블 2샷으로 계산했습니다. 원두는 시트처럼 일반·디카페인을 합쳐 두고 "디카페인" 옵션·디카페인 아메리카노 잔 수만큼을 따로 표시했습니다. 빵·디저트·쇼케이스·진동벨 그룹은 제외했습니다.</p>
 
 <figure>${barChart(months, cups, { label: '월별 음료 판매 잔 수' })}<figcaption>월별 음료 판매 잔 수 (커피·티·에이드·라떼·주스, 옵션 제외)</figcaption></figure>
@@ -237,7 +238,7 @@ const html = `<!doctype html>
 <div class="callout warn">
   <div class="t">포장 크기 확인 (숫자가 바로 바뀝니다)</div>
   <ul style="margin:0;padding-left:5mm">
-    <li><strong>탄산수</strong> 1병 용량과 발주 단위 — 에이드에 연 ${n0(sparklingL)}L(하루 ${n1(sparklingL / 365)}L, 여름 최대 ${n1((sparkling?.peakPerDay || 0) / 1000)}L). 500ml 병이면 하루 7병이라 시트 기준 8은 하루치뿐 → 기준 단위가 박스(또는 큰 병)로 보입니다. 확인 전에는 예상 재고에서 뺐습니다.</li>
+    <li><strong>탄산수</strong> 1병 용량과 발주 단위 — 에이드에 연 ${n0(sparklingL)}L(하루 ${n1(sparklingL / 365)}L, 여름 최대 ${n1((sparkling?.peakPerDay || 0) / 1000)}L). 500ml 병이면 하루 ${n0(sparklingBottlesPerDay)}병이라 시트 기준 ${parCell(sparkling)}은 하루치뿐 → 기준 단위가 박스(또는 큰 병)로 보입니다. 확인 전에는 예상 재고에서 뺐습니다.</li>
     <li><strong>딸기청·블루베리청</strong> 1단지 무게 (2kg 가정)</li>
     <li><strong>배도라지차</strong> 1박스 병 수 (470g 병 기준 연 ${n0(a.items.find((r) => r.itemId === 'pear-bellflower-tea')?.totalUnits)}병)</li>
     <li><strong>디카페인 콜드브루·미숫가루</strong> 1봉 무게 (1kg 가정)</li>

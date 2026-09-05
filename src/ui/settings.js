@@ -44,6 +44,7 @@ export function render(s) {
       <div class="row wrap">
         <label class="btn">📈 소비 모델 불러오기 <input type="file" accept="application/json,.json" data-change="model-import" class="sr-only" /></label>
         ${s.consumption ? `<button type="button" class="btn ghost" data-action="model-clear">모델 지우기</button>` : ''}
+        ${!s.consumption && builtinModel() ? `<button type="button" class="btn ghost" data-action="model-restore">내장 모델 다시 쓰기</button>` : ''}
       </div>
     </section>
 
@@ -160,7 +161,9 @@ export const changes = {
       keepSafetyCopy(app.state);
       app.update((s) => {
         const apiKey = s.settings.apiKey;
-        Object.assign(s, st, { ui: s.ui, settings: { ...st.settings, apiKey } });
+        // 백업에 소비 모델이 없으면(예전 백업) 지금 쓰는 모델을 유지
+        const consumption = st.consumption && st.consumption.items ? st.consumption : s.consumption;
+        Object.assign(s, st, { ui: s.ui, settings: { ...st.settings, apiKey }, consumption });
       });
       app.toast('백업을 불러왔습니다');
     });
@@ -171,8 +174,17 @@ export const actions = {
   'model-clear'(el, e, app) {
     if (!confirm('소비 모델을 지울까요? 예상 재고 표시가 사라집니다.')) return;
     app.update((s) => {
-      s.consumption = null;
+      s.consumption = false; // null이 아니라 false: 다시 열어도 내장 모델로 되돌아가지 않게
+      s.ui.countOnlyCheck = false;
     });
+  },
+  'model-restore'(el, e, app) {
+    const m = builtinModel();
+    if (!m) return app.toast('내장 소비 모델이 없습니다');
+    app.update((s) => {
+      s.consumption = m;
+    });
+    app.toast('내장 소비 모델을 다시 사용합니다');
   },
   'apikey-toggle'(el) {
     const input = document.getElementById('api-key-input');

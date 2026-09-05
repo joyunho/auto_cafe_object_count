@@ -32,6 +32,8 @@ jobs:
           sed -i "s/const VERSION = '[^']*';/const VERSION = '${GITHUB_SHA::8}';/" dist/sw.js
           grep -q "${GITHUB_SHA::8}" dist/sw.js
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true # Pages가 아직 켜져 있지 않으면 켜기를 시도 (권한이 없으면 Settings → Pages에서 수동 설정)
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

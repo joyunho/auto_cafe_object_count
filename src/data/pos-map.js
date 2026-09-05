@@ -127,7 +127,7 @@ export const INGREDIENT_MAP = {
   '에스프레소샷': { item: 'beans', perShotG: 18, perPackage: 1000, unit: 'g', assumed: true, note: '1샷 18g·1봉 1kg 가정, 디카페인 합산' },
   '우유': { item: 'milk', perPackage: 1000, unit: 'ml', density: 1.03, note: '매일우유 1L' },
   '스팀우유': { item: 'milk', perPackage: 1000, unit: 'ml', density: 1.03, note: '매일우유 1L' },
-  '크림우유': { item: 'milk', perPackage: 1000, unit: 'ml', density: 1.03, milkShare: 0.6, note: '우유 3 : 휘핑 2 → 우유 60%' },
+  '크림우유': { item: 'milk', perPackage: 1000, unit: 'ml', density: 1.03, milkShare: 0.6, note: '크림우유 중 우유 비중 60%' },
   '연유': { item: 'condensed-milk', perPackage: 500, unit: 'g', note: '매일 연유 500g' },
   // 시럽·소스 (레시피 g, 포장 ml → 밀도 1.3 가정)
   '바닐라시럽': { item: 'vanilla-syrup', perPackage: 1000, unit: 'ml', density: 1.3, assumed: true, note: '모닌 1L' },
@@ -165,7 +165,7 @@ export const INGREDIENT_MAP = {
   '대추': { item: 'jujube', perPackage: null, unit: 'ea', note: '1포장 개수 확인 필요' },
   '잣': { item: 'pine-nut', perPackage: null, unit: 'ea', note: '1포장 개수 확인 필요' },
   '아이스크림': { item: 'ice-cream', perPackage: null, unit: 'ea', note: '1통 스쿱 수 확인 필요' },
-  '탄산수': { item: 'sparkling-water', perPackage: null, unit: 'ml', assumed: true, note: '병 용량·발주 단위 확인 필요 (500ml 병이면 하루 7병)' },
+  '탄산수': { item: 'sparkling-water', perPackage: null, unit: 'ml', assumed: true, note: '병 용량·발주 단위 확인 필요' },
   '토마토': { item: 'tomato', perPackage: null, unit: 'g', note: '1박스 무게 확인 필요' },
   '키위': { item: 'kiwi', perPackage: null, unit: 'ea', note: '1박스 개수 확인 필요' },
   // 씨앤비 시트에 없는 재료 (다른 거래처)

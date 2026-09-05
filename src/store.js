@@ -75,6 +75,7 @@ export function migrate(raw) {
       status: s.status === 'submitted' ? 'submitted' : 'draft',
       counts: isObj(s.counts) ? s.counts : {},
       overrides: isObj(s.overrides) ? s.overrides : {},
+      filled: isObj(s.filled) ? s.filled : {}, // 예상값·기준값으로 채운 품목 (실측 아님)
     }));
   state.orders = objList(state.orders)
     .filter((o) => typeof o.id === 'string')
@@ -85,7 +86,9 @@ export function migrate(raw) {
     if (typeof state.settings[k] !== 'string') state.settings[k] = SEED_SETTINGS[k];
   }
   if (state.settings.photoMode !== 'shelf') state.settings.photoMode = 'sheet';
-  if (!isObj(state.consumption) || !isObj(state.consumption.items)) state.consumption = builtinModel();
+  // 소비 모델: 없으면 내장 모델(단일 파일 빌드) 또는 null. 사용자가 지운 것(false)은 그대로 둔다.
+  if (!('consumption' in raw)) state.consumption = builtinModel();
+  else if (state.consumption !== false && (!isObj(state.consumption) || !isObj(state.consumption.items))) state.consumption = builtinModel();
   state.version = SCHEMA_VERSION;
   return state;
 }
