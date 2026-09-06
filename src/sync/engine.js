@@ -673,11 +673,23 @@ export function createSync(app, backend, opts = {}) {
     if (pending) log('closed with unsent changes — call drain() before close()');
   }
 
+  /** 신호가 돌아왔다 — 백엔드가 지원하면 즉시 다시 붙게 하고, 밀린 것을 보낸다 */
+  async function wake() {
+    if (closed) return;
+    try {
+      await backend.wake?.();
+    } catch (e) {
+      log('wake failed', e?.message || e);
+    }
+    schedule(0);
+  }
+
   return {
     start,
     schedule,
     flush,
     drain,
+    wake,
     close,
     dropBaseline,
     get status() {
