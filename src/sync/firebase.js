@@ -14,6 +14,8 @@ let sdkPromise = null;
 
 /** SDK 두 모듈(app · firestore)을 한 번만 불러온다. 실패하면 다음 호출에서 다시 시도한다 */
 export function loadFirebaseSdk(version = SDK_VERSION) {
+  // 테스트용: Node 에서 npm 의 firebase 패키지를 그대로 넣어 줄 수 있다 ({ app, firestore } 모듈 쌍)
+  if (globalThis.__FIREBASE_SDK__) return Promise.resolve(globalThis.__FIREBASE_SDK__);
   if (!sdkPromise) {
     // 주소를 변수로 조립해 번들러(esbuild)가 해석하려 들지 않게 한다
     const base = `${CDN_BASE}${version}/`;
