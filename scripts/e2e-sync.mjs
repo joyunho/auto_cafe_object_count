@@ -18,6 +18,7 @@ const OUT = path.join(root, 'e2e-out');
 const WAIT = 5_000; // 다른 기기의 변경이 도착하기를 기다리는 최대 시간
 const SHARED_KEY = 'cafe-inventory-shared';
 const B_STORAGE_KEY = 'cafe-inventory-v1-b';
+const BASELINE_KEY = 'cafe-inventory-v1.synced'; // A 의 기준선 (앱 저장소 키 + '.synced')
 fs.mkdirSync(OUT, { recursive: true });
 
 // ── 정적 서버 ─────────────────────────────────────────────
@@ -245,6 +246,34 @@ try {
   assert.equal(await B.page.evaluate(() => document.activeElement?.dataset?.id), 'cheonggyul-cheong');
   await shot(B.page, 'b-focus-kept');
   log('입력 중 포커스 유지 (B 청귤청 포커스 중 A 의 딸기청 3 도착) · 이어 입력 B → A');
+
+  // 8. 사장님 폰에서 센 수량이 아직 안 나간 채로 앱이 다시 뜨는 경우 (실제로 신고된 증상)
+  //    A 의 공유 저장소 쓰기를 붙잡아 둔 채 레몬 6 을 센 뒤 페이지를 새로 연다 = 홈 화면 앱 재실행.
+  //    다시 뜬 A 는 저장해 둔 기준선으로 "아직 안 보낸 내 입력"을 알아보고, 원격 문서에 덮이지 않게 지킨 뒤 올려야 한다.
+  await Promise.all([settle(A), settle(B)]);
+  const draftNow = await sessionId(A);
+  assert.ok(await A.page.evaluate((k) => !!localStorage.getItem(k), BASELINE_KEY), 'A 가 기준선을 저장해 두었다');
+  await A.page.evaluate(() => {
+    window.__SHARED_WRITE_GATE__ = () => new Promise(() => {}); // 이 페이지가 사는 동안 쓰기는 영영 끝나지 않는다
+  });
+  await count(A, 'lemon-juice').fill('6');
+  await sleep(600); // 디바운스(0.2초)가 지나 flush 가 붙잡힌 쓰기에 걸릴 만큼
+  assert.equal(await A.page.evaluate(() => window.__cafeApp.activeSession().counts['lemon-juice']), 6, 'A 의 화면·로컬에는 레몬 6');
+  assert.equal((await shared(A)).sessions?.[draftNow]?.counts?.['lemon-juice'], undefined, '아직 공유 저장소에는 안 갔다');
+  await shot(A.page, 'a-unsent-count');
+
+  await A.page.reload();
+  await A.page.waitForSelector('.tabbar');
+  await waitFor(A, () => document.querySelector('#sync-pill')?.textContent.trim() === '공유 중', null, '다시 연 뒤 공유 중');
+  await settle(A);
+  assert.equal(await count(A, 'lemon-juice').inputValue(), '6', '다시 열어도 방금 센 레몬 6 이 화면에 남아 있다');
+  assert.equal(await A.page.evaluate(() => window.__cafeApp.activeSession().counts['lemon-juice']), 6);
+  await waitFor(B, () => window.__cafeApp.activeSession().counts['lemon-juice'] === 6, null, '다른 기기 B 에 레몬 6 도착');
+  assert.equal((await shared(B)).sessions?.[draftNow]?.counts?.['lemon-juice'], 6, '공유 저장소에도 올라갔다');
+  assert.equal(await sessionId(A), draftNow, '초안은 그대로 하나');
+  assert.equal(await count(A, 'cheonggyul-cheong').inputValue(), '4', '다른 기기가 센 값도 그대로');
+  await shot(B.page, 'b-recovered-count');
+  log('보내기 전에 앱이 다시 떠도 센 수량이 살아남아 다른 기기까지 간다 (기준선 저장)');
 
   collecting = false;
   await context.close();
