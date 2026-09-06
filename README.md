@@ -121,16 +121,15 @@ GitHub Pages 주소로 앱을 배포하고, 데이터는 Google Firebase(Firesto
 2. 왼쪽 메뉴 **빌드 → Firestore Database → 데이터베이스 만들기** → 위치 `asia-northeast3 (서울)` → **프로덕션 모드**로 시작.
 3. Firestore 화면의 **규칙** 탭에 이 저장소의 [`firestore.rules`](firestore.rules) 내용을 그대로 붙여 넣고 **게시**.
 4. 왼쪽 위 **프로젝트 설정(톱니바퀴) → 일반 → 내 앱 → 웹(`</>`) 추가** → 앱 닉네임 아무거나(호스팅 체크 안 함) → 등록 → 화면에 나오는 `firebaseConfig = { apiKey: ..., projectId: ..., appId: ... }` 를 복사.
-5. `src/data/share-config.js` 를 열어 아래처럼 넣고 커밋/푸시합니다. (먼저 시험해 보려면 설정 탭 → 공유 저장소 카드에 같은 내용을 붙여 넣고 **연결** — 이 기기에서만 적용됩니다. Firebase 콘솔 조각을 그대로 붙여 넣어도 읽습니다.)
-   ```js
-   export const SHARE_CONFIG = {
-     // 4번에서 복사한 값
-     firebase: { apiKey: '...', authDomain: '...', projectId: '...', storageBucket: '...', messagingSenderId: '...', appId: '...' },
-     // 매장 구분 코드: 무작위 문자열 12자 이상 (영문·숫자·-), 예: cnb-7f3k9q2mzx8v
-     storeCode: '...',
-   };
+5. GitHub 저장소 **Settings → Secrets and variables → Actions → New repository secret** 에 이름 `SHARE_CONFIG_JSON`, 값은 아래 JSON 을 넣습니다. 배포할 때 GitHub Actions 가 이 값으로 `src/data/share-config.js` 를 만들어 넣습니다 (공개 저장소에 매장 코드가 그대로 올라가지 않게). 먼저 한 기기에서 시험해 보려면 설정 탭 → 공유 저장소 카드에 같은 JSON 을 붙여 넣고 **연결** — 그 기기에서만 적용됩니다. Firebase 콘솔 조각을 그대로 붙여 넣어도 읽습니다.
+   ```json
+   {
+     "firebase": { "apiKey": "...", "authDomain": "...", "projectId": "...", "storageBucket": "...", "messagingSenderId": "...", "appId": "..." },
+     "storeCode": "cnb-7f3k9q2mzx8v"
+   }
    ```
-6. GitHub 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions**. 푸시하면 자동 배포되어 `https://<계정>.github.io/auto_cafe_object_count/` 주소가 생깁니다. 직원에게 링크를 공유하고 각자 **홈 화면에 추가**하면 끝입니다.
+   `storeCode` 는 매장 구분 코드입니다: 무작위 문자열 12자 이상 (영문·숫자·-). 비공개 저장소라면 비밀값 대신 `src/data/share-config.js` 에 직접 넣어도 됩니다.
+6. GitHub 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions**. 푸시(또는 Actions 탭에서 "Deploy to GitHub Pages" 실행)하면 자동 배포되어 `https://<계정>.github.io/auto_cafe_object_count/` 주소가 생깁니다. 직원에게 링크를 공유하고 각자 **홈 화면에 추가**하면 끝입니다.
 
 연결되면 상단 알약이 **공유 중**으로 바뀝니다. 설정 탭의 공유 저장소 카드에서 마지막 동기화 시각과 오류 내용을 볼 수 있고, 붙여 넣은 설정은 **공유 끄기**로 지울 수 있습니다.
 
@@ -151,7 +150,7 @@ GitHub Pages 주소로 앱을 배포하고, 데이터는 Google Firebase(Firesto
 
 #### 개발 · 테스트용 훅
 
-- `window.__SHARED_BACKEND__ = 'local'` — 페이지 스크립트보다 먼저 넣으면 같은 브라우저의 탭끼리(localStorage) 공유하는 가짜 백엔드를 씁니다. 카드에 "같은 브라우저 탭끼리 (테스트)"로 표시.
+- `window.__SHARED_BACKEND__ = 'local'` — 페이지 스크립트보다 먼저 넣으면 같은 브라우저의 탭끼리(localStorage) 공유하는 가짜 백엔드를 씁니다. 카드에 "같은 브라우저 탭끼리 (테스트)"로 표시. `'none'` 이면 배포 설정이 있어도 공유 없이 이 기기만 (`npm run e2e` 가 씁니다).
 - `window.__SHARE_CONFIG__` — 설정 탭에 붙여 넣은 값과 `src/data/share-config.js` 보다 우선하는 설정 객체 (테스트에서 Firestore 에뮬레이터를 가리킬 때, `emulator: { host, port }`).
 - `window.__STORAGE_KEY__` — localStorage 키를 바꿔 한 브라우저 컨텍스트가 "다른 기기"처럼 동작하게 합니다.
 - `node scripts/e2e-firebase.mjs` — Firestore 에뮬레이터(`firebase emulators:start --only firestore`)를 띄운 뒤 두 기기가 실제로 합쳐지는지 확인하는 스모크 테스트. 평소의 `npm run e2e` 는 공유 없이(이 기기만) 돕니다.

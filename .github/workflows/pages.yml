@@ -24,6 +24,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 공유 저장소 설정은 저장소 비밀값 SHARE_CONFIG_JSON 으로 배포 시점에 넣는다 (README "직원과 실시간 공유하기").
+      # 비밀값이 없으면 앱은 "이 기기만"으로 동작한다.
+      - name: Inject share config
+        env:
+          SHARE_CONFIG_JSON: ${{ secrets.SHARE_CONFIG_JSON }}
+        run: |
+          if [ -z "$SHARE_CONFIG_JSON" ]; then echo "SHARE_CONFIG_JSON 없음 → 공유 없이 배포"; exit 0; fi
+          node -e '
+            const cfg = JSON.parse(process.env.SHARE_CONFIG_JSON);
+            const fb = cfg.firebase || cfg;
+            if (!fb.projectId || !fb.apiKey || !fb.appId) throw new Error("firebase projectId/apiKey/appId 가 필요합니다");
+            const out = { firebase: fb, storeCode: String(cfg.storeCode || "default") };
+            if (out.storeCode.length < 8) throw new Error("storeCode 는 8자 이상이어야 합니다");
+            require("fs").writeFileSync("src/data/share-config.js", "// 배포 시 GitHub Actions 가 SHARE_CONFIG_JSON 으로 생성한 파일\nexport const SHARE_CONFIG = " + JSON.stringify(out) + ";\n");
+            console.log("공유 저장소 설정 주입: project " + fb.projectId + ", storeCode " + out.storeCode.slice(0, 4) + "…");
+          '
       - name: Collect static files
         run: |
           mkdir -p dist

@@ -48,6 +48,10 @@ try {
     permissions: ['clipboard-read', 'clipboard-write'],
     acceptDownloads: true,
   });
+  // 기본 스모크 테스트는 공유 저장소 없이(이 기기만) 돈다 — 배포 설정(src/data/share-config.js)이 있어도 Firebase 에 붙지 않게
+  await context.addInitScript(() => {
+    window.__SHARED_BACKEND__ = 'none';
+  });
   const page = await context.newPage();
   page.on('console', (msg) => {
     if (msg.type() === 'error') problems.push(`console.error: ${msg.text()}`);

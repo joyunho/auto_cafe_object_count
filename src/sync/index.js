@@ -1,5 +1,5 @@
 // 어떤 공유 백엔드를 쓸지 고른다.
-//   1. window.__SHARED_BACKEND__ === 'local' → 같은 브라우저 탭끼리 (테스트·개발)
+//   1. window.__SHARED_BACKEND__ === 'local' → 같은 브라우저 탭끼리 (테스트·개발) · 'none' → 공유 없이 이 기기만 (테스트)
 //   2. claude.ai 아티팩트 안 → 아티팩트 db (같은 Claude 조직 사람끼리 실시간 공유)
 //   3. Firebase 설정이 있으면 (window.__SHARE_CONFIG__ > 설정 탭에 붙여넣은 JSON > src/data/share-config.js) → Firestore (링크 있는 누구나)
 //   4. 없으면 null → 이 기기에만 저장
@@ -37,7 +37,9 @@ function normalizeConfig(cfg) {
 }
 
 export async function pickBackend(settings) {
-  if (globalThis.window?.__SHARED_BACKEND__ === 'local') return createLocalBackend();
+  const forced = globalThis.window?.__SHARED_BACKEND__;
+  if (forced === 'local') return createLocalBackend();
+  if (forced === 'none') return null; // 테스트: 배포 설정이 있어도 이 기기만
   const db = await detectArtifactDb();
   if (db) return createArtifactBackend(db);
   const cfg = shareConfig(settings);
