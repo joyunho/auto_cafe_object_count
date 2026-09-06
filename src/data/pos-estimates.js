@@ -7,6 +7,10 @@
 // basis: 무엇을 근거로 한 추정인지 (보고서 비고에 표시)
 
 const DENSITY_SYRUP = 1.3; // 시럽·소스 g/ml 추정
+// 레몬(과일, 품목 lemon-syrup): 레몬청과 레몬 가니쉬가 같은 품목으로 모이므로 두 추정의 단위·1개당 양을 맞춘다
+//   (같은 품목에 g와 조각이 섞이면 합산이 틀어진다). 1개 ≈ 레몬청 100g, 1개 = 8조각 → 1조각 = 12.5g 상당.
+const LEMON_G = 100; // 레몬 1개 ≈ 레몬청 100g
+const LEMON_SLICES = 8; // 생레몬 1개 = 8조각
 const est = (o, basis) => ({ ...o, assumed: true, basis, note: `추정: ${basis}` });
 
 export const ESTIMATES = {
@@ -29,7 +33,8 @@ export const ESTIMATES = {
     '시나몬가루': est({ item: 'cinnamon-powder', perPackage: 500, unit: 'g', perServing: 0.3 }, '1잔 0.3g (한 꼬집)'),
     '오렌지 가니쉬': est({ item: 'orange-garnish', perPackage: null, unit: 'ea', perServing: 1 }, '1잔 1조각 (1포장 조각 수는 모름)'),
     '가니쉬': est({ item: 'orange-garnish', perPackage: null, unit: 'ea', perServing: 1 }, '종류 미표기 가니쉬 = 오렌지 1조각'),
-    '레몬 가니쉬': est({ item: 'lemon-juice', perPackage: null, unit: 'ea', perServing: 1 }, '시트 1 "레몬" = 건조레몬, 1잔 1조각'),
+    '레몬청': est({ item: 'lemon-syrup', perPackage: LEMON_G, unit: 'g' }, '레몬 1개 ≈ 레몬청 100g 으로 봄'),
+    '레몬 가니쉬': est({ item: 'lemon-syrup', perPackage: LEMON_G, unit: 'g', perServing: LEMON_G / LEMON_SLICES }, '생레몬 1개 = 8조각, 1잔 1조각 (1조각 = 레몬 1/8 = 12.5g 상당)'),
     '대추 가니쉬': est({ item: 'jujube', perPackage: null, unit: 'ea', perServing: 2 }, '1잔 대추 2개'),
     '잣(미표기)': est({ item: 'pine-nut', perPackage: null, unit: 'ea', perServing: 3 }, '1잔 잣 3개'),
     '아이스크림': est({ item: 'ice-cream', perPackage: null, unit: 'scoop', perServing: 1 }, '1잔 1스쿱 (1통 스쿱 수는 모름)'),
@@ -46,7 +51,6 @@ export const ESTIMATES = {
   },
   PRODUCT_MAP: {
     '노아주스': est({ items: { 'noa-orange': 0.25, 'noa-carrot': 0.25, 'noa-mango': 0.25, 'noa-kiwi': 0.25 } }, '종류 정보 없음 → 4종 균등'),
-    '어린이 사과주스': est({ item: 'sweet-apple', qty: 1 }, '이름으로 달콤사과로 봄'),
     '포도주스': est({ item: 'grape-juice', qty: 1 }, '착즙포도주스 1병 = 1건'),
     '브런치어린이': est({ brunch: 0.5 }, '어린이 = 0.5인분'),
   },

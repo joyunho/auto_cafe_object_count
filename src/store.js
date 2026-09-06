@@ -3,8 +3,9 @@ import { SEED_ITEMS, SEED_GROUPS, SEED_SETTINGS } from './data/items.js';
 import { SEED_SUPPLY_ITEMS, SEED_SUPPLY_GROUPS } from './data/supplies.js';
 import { BOOKS, DEFAULT_BOOK } from './data/books.js';
 
-export const STORAGE_KEY = 'cafe-inventory-v1';
-export const SAFETY_KEY = 'cafe-inventory-v1.before-import';
+// 테스트에서 한 브라우저 안에 '두 기기'를 흉내 내려고 키를 바꿀 수 있다 (window.__STORAGE_KEY__)
+export const STORAGE_KEY = (typeof window !== 'undefined' && window.__STORAGE_KEY__) || 'cafe-inventory-v1';
+export const SAFETY_KEY = `${STORAGE_KEY}.before-import`;
 export const SCHEMA_VERSION = 1;
 
 export function uid(prefix = '') {
@@ -109,7 +110,7 @@ export function migrate(raw) {
     state.settings.orderDaysByBook[b.id] = d.length ? [...new Set(d)].sort() : [...b.orderDays];
   }
   state.ui.book = bookOr(state.ui.book);
-  for (const k of ['storeName', 'senderName', 'supplierName', 'orderTitle', 'apiKey']) {
+  for (const k of ['storeName', 'senderName', 'supplierName', 'orderTitle', 'apiKey', 'shareConfig']) {
     if (typeof state.settings[k] !== 'string') state.settings[k] = SEED_SETTINGS[k];
   }
   if (state.settings.photoMode !== 'shelf') state.settings.photoMode = 'sheet';

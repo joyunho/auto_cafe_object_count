@@ -6,9 +6,11 @@
 //   rule      : 시트 각주 "* 유자, 청귤 최소발주 6○○ / 3개 미만일 때 1 BOX씩" → 재발주점 규칙
 //   note      : 원본 시트와 다르게 옮긴 부분 등 메모
 //
-// ※ 시트 1의 "레몬"(주스 칸)과 시트 2의 "레몬"(시럽 칸)은 이름이 같아 구분을 위해
-//    "레몬(주스)" / "레몬(시럽)"으로 등록했습니다. 실제 품목이 다르면 품목 탭에서 이름을 고치세요.
-//    (두 품목에 같은 별칭 "레몬"을 주면 사진 인식 결과를 어느 쪽에도 배정할 수 없어 별칭은 두지 않았습니다.)
+// ※ 시트 1의 "레몬"(주스 칸, 기준 1)과 시트 2의 "레몬"(시럽 칸, 기준 6)은 이름이 같아 따로 등록했습니다.
+//    사용자 확인(2026-09): 레몬은 시럽이 아니라 진짜 과일 레몬. 그래서 2장 것을 "레몬(과일)"(별칭 "레몬"),
+//    1장 것을 "레몬(과일 · 1장 주스 칸)"으로 두었습니다. 두 칸이 같은 레몬이고 기준이 어느 쪽인지 확인되면 하나로 정리하세요.
+//    (별칭 "레몬"은 사진 인식 결과가 한쪽에만 배정되도록 2장 것에만 두었습니다.)
+// ※ 사용자 확인(2026-09): 달콤사과는 병 주스, 자몽·청포도는 시럽 → "자몽시럽"(별칭 자몽) / "청포도시럽"(별칭 청포도).
 // ※ 그룹은 시트에 없는 앱의 분류입니다. 시트 칸 순서와 조금 다를 수 있습니다.
 
 // 제품(재료) 장부 — 시트 3장
@@ -61,14 +63,14 @@ export const SEED_ITEMS = [
   item('grape-juice', '착즙포도주스', 'juice', 10),
   item('kiwi', '키위', 'juice', 1),
   item('tomato', '토마토', 'juice', 1),
-  item('lemon-juice', '레몬(주스)', 'juice', 1, { note: '원본 시트 표기: 레몬 (시트 1 주스 칸)' }),
+  item('lemon-juice', '레몬(과일 · 1장 주스 칸)', 'juice', 1, { note: "재고표 1장 주스 칸의 '레몬 1' — 2장의 레몬(과일)과 같은 것인지 확인 필요" }),
   item('noa-orange', '노아(오렌지)', 'juice', 1),
   item('noa-carrot', '노아(당근)', 'juice', 1),
   item('noa-mango', '노아(망고)', 'juice', 1),
   item('noa-kiwi', '노아(키위)', 'juice', 1),
   item('golden-apple-juice', '골든메달사과주스', 'juice', 1),
   item('evian', '에비앙', 'juice', 1),
-  item('sweet-apple', '달콤사과', 'juice', 2),
+  item('sweet-apple', '달콤사과', 'juice', 2, { note: '병 주스 (사용자 확인)' }),
 
   // ── 시트 2: 원두 · 우유 ─────────────────────────────────
   item('beans', '원두 / 디카페인 원두', 'coffee', null, { aliases: ['원두', '디카페인 원두'] }),
@@ -79,9 +81,9 @@ export const SEED_ITEMS = [
   // ── 시트 2: 탄산 · 시럽 · 소스 ──────────────────────────
   item('sparkling-water', '탄산수', 'syrup', 8),
   item('vanilla-syrup', '바닐라시럽(1box>6)', 'syrup', 8, { boxSize: 6, orderUnit: 'box', aliases: ['바닐라시럽'] }),
-  item('grapefruit', '자몽', 'syrup', 6),
-  item('lemon-syrup', '레몬(시럽)', 'syrup', 6, { note: '원본 시트 표기: 레몬 (시트 2 시럽 칸)' }),
-  item('green-grape', '청포도', 'syrup', 6),
+  item('grapefruit', '자몽시럽', 'syrup', 6, { aliases: ['자몽'], note: '사용자 확인: 시럽 (재고표 표기: 자몽)' }),
+  item('lemon-syrup', '레몬(과일)', 'syrup', 6, { aliases: ['레몬'], note: '사용자 확인: 진짜 과일 레몬 (재고표 2장 시럽 칸)' }),
+  item('green-grape', '청포도시럽', 'syrup', 6, { aliases: ['청포도'], note: '사용자 확인: 시럽 (재고표 표기: 청포도)' }),
   item('cafe-syrup', '카페시럽(1box>6)', 'syrup', 8, { boxSize: 6, orderUnit: 'box', aliases: ['카페시럽'] }),
   item('hazelnut-syrup', '헤이즐넛 시럽', 'syrup', 3),
   item('caramel-sauce', '카라멜소스', 'syrup', 4),
@@ -145,4 +147,5 @@ export const SEED_SETTINGS = {
   orderDaysByBook: { supply: [3] }, // 자재: 수요일
   apiKey: '',
   photoMode: 'sheet',
+  shareConfig: '', // 설정 탭에 붙여넣은 Firebase 설정(JSON) — 이 기기에만 저장
 };

@@ -8,6 +8,8 @@
     "test": "node --test \"tests/**/*.test.js\"",
     "serve": "node scripts/serve.mjs",
     "e2e": "node scripts/e2e.mjs",
+    "e2e:firebase": "node scripts/e2e-firebase.mjs",
+    "e2e:sync": "node scripts/e2e-sync.mjs",
     "icons": "node scripts/make-icons.mjs",
     "build": "node scripts/build-single.mjs && node scripts/build-single.mjs --fragment",
     "extract": "node scripts/extract-from-photo.mjs"
