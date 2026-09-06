@@ -178,6 +178,21 @@ export async function createFirebaseBackend(cfg) {
       }
     },
 
+    /**
+     * 신호가 돌아왔을 때 즉시 다시 붙는다. Firestore 는 연결이 끊기면 점점 뜸하게(최대 1분) 재시도하므로,
+     * 창고에서 나온 직후 센 수량이 한참 안 올라갈 수 있다. 네트워크를 껐다 켜면 그 대기가 초기화된다.
+     * (끄는 동안에도 못 보낸 쓰기는 기기에 그대로 남는다)
+     */
+    async wake() {
+      if (closed) return;
+      try {
+        await fs.disableNetwork(db);
+      } catch {
+        /* 이미 꺼져 있으면 그대로 켜기만 한다 */
+      }
+      await fs.enableNetwork(db);
+    },
+
     async remove(coll, docId) {
       try {
         await fs.deleteDoc(docRef(coll, docId));

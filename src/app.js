@@ -161,14 +161,15 @@ export const app = {
    * 화면이 꺼져 있을 때(백그라운드)는 조용히 새로고침해 두고, 보고 있을 때는 세는 중이 아닐 때만 한 번 새로고침한다.
    * 센 수량은 이 기기에 그대로 남아 있어 새로고침해도 사라지지 않는다 (기준선 저장).
    */
-  recoverBySdkReload({ hidden = false } = {}) {
+  recoverBySdkReload({ hidden = false, retry = false } = {}) {
     if (!this.needsSdkReload() || !this.root) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     if (hidden) return this.reloadForSync();
-    if (this.sdkRefreshHinted) return;
-    this.sdkRefreshHinted = true;
+    // 세는 중이 아니면 바로 새로고침한다. 세는 중이면 미루고, 손을 뗄 때 다시 여기로 온다
     if (this.safeToReload()) return this.reloadForSync();
-    this.toast('연결이 돌아왔습니다. 화면을 새로고침하면 공유가 이어집니다 (센 수량은 그대로 남아 있습니다).', 6000);
+    if (retry || this.sdkRefreshHinted) return;
+    this.sdkRefreshHinted = true;
+    this.toast('연결이 돌아왔습니다. 다 세고 손을 떼면 자동으로 이어집니다 (센 수량은 그대로 남아 있습니다).', 6000);
   },
 
   reloadForSync() {
@@ -186,7 +187,7 @@ export const app = {
     this.syncRetryMs = Math.min(60000, this.syncRetryMs ? this.syncRetryMs * 2 : 5000);
     this.syncRetryTimer = setTimeout(() => {
       this.syncRetryTimer = null;
-      if (!this.sync) this.startSync();
+      if (!this.sync) this.startSync().then(() => this.recoverBySdkReload());
     }, this.syncRetryMs);
   },
 
@@ -473,9 +474,16 @@ export const app = {
         this.startSync().then(() => this.recoverBySdkReload());
       }
     });
+    // 세는 중(입력칸 포커스)이라 새로고침을 미뤘으면, 손을 떼는 순간 이어서 복구한다
+    document.addEventListener('focusout', () => {
+      if (!this.needsSdkReload()) return;
+      setTimeout(() => this.recoverBySdkReload({ retry: true }), 300); // 다음 칸으로 옮기는 중일 수 있다
+    });
     window.addEventListener('pagehide', () => this.flushNow());
     window.addEventListener('freeze', () => this.flushNow()); // 크로미움 계열의 정지 직전 신호
     window.addEventListener('online', () => {
+      // 이미 붙어 있으면 Firestore 의 재시도 대기를 초기화해 바로 올린다 (창고에서 나온 직후)
+      this.sync?.wake?.();
       this.flushNow();
       if (!this.sync) {
         this.syncRetryMs = 0;
