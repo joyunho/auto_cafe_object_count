@@ -146,14 +146,21 @@ try {
   log('발주 수량 자동 계산 (낱개/박스/재발주점 규칙)');
 
   // 5. 수량 직접 수정 → 되돌리기
+  const sessUpdatedAt = () => page.evaluate(() => window.__cafeApp.activeSession().updatedAt || '');
+  const beforeOverride = await sessUpdatedAt();
   const qtyInput = page.locator('input[data-change="order-qty"][data-id="sparkling-water"]');
   await qtyInput.fill('6');
   await qtyInput.dispatchEvent('change');
   await page.waitForFunction(() => document.querySelector('#order-text')?.textContent.includes('탄산수 6개'));
   assert.ok(await page.locator('.order-line.overridden').count() === 1);
+  // 발주 수량을 직접 고친 것도 "마지막으로 고친 시각"을 올려야 한다 —
+  // 공유 저장소 엔진이 기준선 없이 뜰 때 이 값으로 내 입력과 남의 변경을 가른다 (engine.js remoteNewer)
+  const afterOverride = await sessUpdatedAt();
+  assert.ok(afterOverride > beforeOverride, `발주 수량 수정이 updatedAt 을 올려야 함 (${beforeOverride} → ${afterOverride})`);
   await page.locator('[data-action="order-reset"][data-id="sparkling-water"]').click();
   await page.waitForFunction(() => document.querySelector('#order-text')?.textContent.includes('탄산수 5개'));
-  log('발주 수량 수동 수정과 되돌리기');
+  assert.ok((await sessUpdatedAt()) > afterOverride, '되돌리기도 updatedAt 을 올려야 함');
+  log('발주 수량 수동 수정과 되돌리기 (수정 시각 갱신 포함)');
 
   // 5b. 박스 단위로 세는 품목(배도라지차 2BOX): 1박스 남음 → 1박스 발주
   await page.locator('.tabbar [data-tab="count"]').click();

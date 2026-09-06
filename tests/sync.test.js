@@ -1042,3 +1042,316 @@ test('19. 백엔드에 batch 가 있으면 처음 올리기를 한 번에 보내
   assert.equal(app2.last.state, 'on');
   sync2.close();
 });
+
+// ── 20~26. 앱을 다시 열어도 아직 못 보낸 입력을 잃지 않는다 (기준선 저장) ─────────────
+/** localStorage 대신 메모리에 넣는 기준선 저장소 (엔진 opts.baseline). 실제와 같이 JSON 으로 오간다 */
+function memBaseline(scope = 'fake::') {
+  const b = {
+    raw: null,
+    saves: 0,
+    fail: false, // 켜면 저장이 실패한다 (저장 공간 부족)
+    clears: 0,
+    load: () => (b.raw ? JSON.parse(b.raw) : null),
+    save(snapshot) {
+      b.saves++;
+      if (b.fail) return false;
+      b.raw = JSON.stringify({ ...snapshot, scope });
+      return true;
+    },
+    clear() {
+      b.clears++;
+      b.raw = null;
+    },
+  };
+  return b;
+}
+
+/** 같은 로컬 상태·같은 저장소로 앱을 다시 연다 (홈 화면 앱 재실행 = 엔진은 새로, 상태와 기준선은 그대로) */
+async function relaunch(state, store, opts = {}) {
+  const app = fakeApp(state);
+  const backend = fakeBackend({}, store);
+  const sync = createSync(app, backend, { ...OPTS, ...opts });
+  sync.start();
+  backend.emitAll();
+  await settle();
+  return { app, backend, sync, store };
+}
+
+/** 원격·로컬이 같은 초안 하나를 며칠째 같이 쓰고 있는 상태 */
+function sharedDraftFixture(counts = { milk: 1 }) {
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  store.sessions.set('s1', draft('s1', { counts: { ...counts }, updatedAt: '2026-09-05T00:00:00.000Z' }));
+  const state = baseState({
+    sessions: [draft('s1', { counts: { ...counts }, updatedAt: '2026-09-05T00:00:00.000Z' })],
+    ui: { tab: 'count', activeSessionId: 's1' },
+  });
+  return { store, state };
+}
+
+test('20. 센 수량을 보내기 전에 앱이 죽어도 다시 열면 살아남아 올라간다 (기준선을 이 기기에 저장한다)', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture();
+  const first = await boot(state, {}, { baseline: bl }, store);
+  assert.ok(bl.raw, '첫 연결에서 기준선을 저장한다');
+  assert.deepEqual(Object.keys(JSON.parse(bl.raw).docs.sessions), ['s1']);
+  assert.equal(first.sync._baselineLoaded, false, '처음엔 읽어 올 기준선이 없다');
+
+  // 사장님이 청귤청 7 을 센다 → 로컬에는 저장되지만 (setCount → app.set → persist) 보내기 전에 앱이 정지·재실행된다
+  state.sessions[0].counts['cheonggyul-cheong'] = 7;
+  first.sync.close();
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1 }, '아직 원격에는 없다');
+
+  const again = await relaunch(state, store, { baseline: bl });
+  assert.equal(again.sync._baselineLoaded, true, '저장해 둔 기준선을 읽어 왔다');
+  assert.deepEqual(state.sessions[0].counts, { milk: 1, 'cheonggyul-cheong': 7 }, '화면·로컬에서 사라지지 않는다');
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1, 'cheonggyul-cheong': 7 }, '원격에도 올라간다');
+  assert.deepEqual(
+    again.backend.calls.filter((c) => c.coll === 'sessions'),
+    [{ op: 'update', coll: 'sessions', id: 's1', patch: { counts: { 'cheonggyul-cheong': 7 } } }],
+    '문서 통째가 아니라 센 항목만 보낸다 (다른 기기가 동시에 센 값을 지우지 않게)',
+  );
+});
+
+test('20b. 기준선이 없으면(예전 방식) 같은 상황에서 입력이 사라진다 — 이 테스트가 회귀를 잡는다', async () => {
+  const { store, state } = sharedDraftFixture();
+  const first = await boot(state, {}, {}, store); // baseline 옵션 없음 = 기준선이 메모리에만
+  state.sessions[0].counts['cheonggyul-cheong'] = 7;
+  first.sync.close();
+  await relaunch(state, store, {}); // 기준선 없이 다시 열기
+  // 기준선이 아예 없으면 무엇이 새 값인지 알 수 없다. 그래도 "합치기"로 입력을 버리지는 않는다
+  assert.deepEqual(state.sessions[0].counts, { milk: 1, 'cheonggyul-cheong': 7 }, '기준선이 없어도 초안 입력은 합쳐서 지킨다');
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1, 'cheonggyul-cheong': 7 });
+});
+
+test('21. 기준선이 없는 초안: 원격 값은 덮지 않고 원격에 없는 로컬 입력만 얹어 올린다', async () => {
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  store.sessions.set('s1', draft('s1', { counts: { milk: 2 }, overrides: { milk: 5 } }));
+  const state = baseState({
+    sessions: [draft('s1', { counts: { milk: 9, 'cheonggyul-cheong': 7 }, filled: { 'cheonggyul-cheong': true } })],
+    ui: { tab: 'count', activeSessionId: 's1' },
+  });
+  const { backend } = await boot(state, {}, {}, store);
+  assert.deepEqual(state.sessions[0].counts, { milk: 2, 'cheonggyul-cheong': 7 }, '겹치는 품목은 원격이 이기고, 나만 센 품목은 남는다');
+  assert.deepEqual(state.sessions[0].overrides, { milk: 5 }, '원격 overrides 는 그대로');
+  assert.deepEqual(state.sessions[0].filled, { 'cheonggyul-cheong': true }, '예상값 표시도 같이 따라온다');
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 2, 'cheonggyul-cheong': 7 });
+  assert.deepEqual(
+    backend.calls.filter((c) => c.coll === 'sessions'),
+    [{ op: 'update', coll: 'sessions', id: 's1', patch: { counts: { 'cheonggyul-cheong': 7 }, filled: { 'cheonggyul-cheong': true } } }],
+    '원격에 없던 것만 보낸다',
+  );
+});
+
+test('21b. 확정된(submitted) 세션은 합치지 않는다 — 기록은 원격이 기준', async () => {
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  store.sessions.set('s1', { ...draft('s1', { counts: { milk: 2 } }), status: 'submitted' });
+  const state = baseState({ sessions: [{ ...draft('s1', { counts: { milk: 2, ghost: 3 } }), status: 'submitted' }] });
+  const { backend } = await boot(state, {}, {}, store);
+  assert.deepEqual(state.sessions[0].counts, { milk: 2 }, '기록에는 로컬 값을 얹지 않는다');
+  assert.deepEqual(backend.calls.filter((c) => c.coll === 'sessions'), []);
+});
+
+test('22. 연결 중(부트스트랩 전)에 센 수량도 붙자마자 그대로 올라간다', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture();
+  (await boot(state, {}, { baseline: bl }, store)).sync.close();
+
+  // 앱을 다시 연다. 통신이 느려 첫 스냅샷이 오기 전에 청귤청 7 을 센다 (상단 표시 = 연결 중)
+  const app2 = fakeApp(state);
+  const backend2 = fakeBackend({}, store);
+  const sync2 = createSync(app2, backend2, { ...OPTS, baseline: bl });
+  sync2.start();
+  assert.equal(sync2.ready, false);
+  assert.equal(app2.last.state, 'connecting');
+  state.sessions[0].counts['cheonggyul-cheong'] = 7;
+  sync2.schedule(); // persist() 가 하는 일
+  await settle();
+  assert.deepEqual(backend2.calls, [], '부트스트랩 전에는 아직 보내지 않는다');
+
+  backend2.emitAll();
+  await settle();
+  assert.equal(sync2.ready, true);
+  assert.equal(app2.last.state, 'on');
+  assert.deepEqual(state.sessions[0].counts, { milk: 1, 'cheonggyul-cheong': 7 }, '연결 중에 센 값이 지워지지 않는다');
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1, 'cheonggyul-cheong': 7 }, '붙자마자 올라간다');
+});
+
+test('23. 다른 기기가 지운 수량은 다시 열어도 되살아나지 않는다 (기준선이 있으면 삭제를 알아본다)', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture({ milk: 1, yuja: 2 });
+  (await boot(state, {}, { baseline: bl }, store)).sync.close();
+  assert.deepEqual(state.sessions[0].counts, { milk: 1, yuja: 2 });
+
+  // 다른 기기가 유자 수량을 지웠다
+  store.sessions.set('s1', draft('s1', { counts: { milk: 1 }, updatedAt: '2026-09-06T00:00:00.000Z' }));
+  const again = await relaunch(state, store, { baseline: bl });
+  assert.deepEqual(state.sessions[0].counts, { milk: 1 }, '원격의 삭제가 반영된다');
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1 }, '되살려 올리지 않는다');
+  assert.deepEqual(again.backend.calls.filter((c) => c.coll === 'sessions'), []);
+});
+
+test('23b. 다른 기기가 지운 문서는 다시 열어도 되살아나지 않는다', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture();
+  store.orders.set('o1', { id: 'o1', book: 'product', date: '2026-09-04', lines: [], text: 'x' });
+  state.orders = [{ id: 'o1', book: 'product', date: '2026-09-04', lines: [], text: 'x' }];
+  (await boot(state, {}, { baseline: bl }, store)).sync.close();
+  store.orders.delete('o1');
+  const again = await relaunch(state, store, { baseline: bl });
+  assert.deepEqual(ids(state.orders), [], '지운 발주 기록은 로컬에서도 사라진다');
+  assert.deepEqual(again.backend.calls.filter((c) => c.coll === 'orders'), [], '다시 올리지 않는다');
+});
+
+test('24. 오프라인에서 고친 품목 이름·설정도 다시 열었을 때 원격 문서에 덮이지 않는다', async () => {
+  const bl = memBaseline();
+  const store = newStore();
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  const state = baseState({
+    items: [
+      { id: 'a', name: 'A', par: 1 },
+      { id: 'b', name: 'B', par: 2 },
+    ],
+    settings: { storeName: '매장', orderDays: [1] },
+  });
+  (await boot(state, {}, { baseline: bl }, store)).sync.close(); // 첫 기기 → 전부 올라가고 기준선이 남는다
+  assert.equal(store.items.get('a').name, 'A');
+
+  // 신호가 없는 창고에서 이름과 발주 요일을 고친다 (엔진이 없으니 아무것도 보내지지 않는다)
+  state.items[0].name = 'A(수정)';
+  state.settings.orderDays = [2, 5];
+  // 그 사이 다른 기기가 B 의 기준량을 고쳤다
+  store.items.set('b', { id: 'b', name: 'B', par: 9, order: 1 });
+
+  const again = await relaunch(state, store, { baseline: bl });
+  assert.equal(state.items[0].name, 'A(수정)', '내 수정이 살아남는다');
+  assert.equal(store.items.get('a').name, 'A(수정)', '원격에도 올라간다');
+  assert.equal(state.items[1].par, 9, '다른 기기의 수정도 받는다');
+  assert.deepEqual(state.settings.orderDays, [2, 5], '설정 변경도 살아남는다');
+  assert.deepEqual(store.meta.get('settings').orderDays, [2, 5]);
+  assert.ok(!again.backend.calls.some((c) => c.op === 'remove'), '아무것도 지우지 않는다');
+});
+
+test('25. 원격이 정말 비어 있으면 저장해 둔 기준선을 버리고 전부 다시 올린다 (remove 를 보내지 않는다)', async () => {
+  const bl = memBaseline();
+  const store = newStore();
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  const state = baseState({ items: [{ id: 'a', name: 'A' }], sessions: [draft('s1', { counts: { milk: 1 } })] });
+  (await boot(state, {}, { baseline: bl }, store)).sync.close();
+  assert.equal(store.items.size, 1);
+
+  // 저장소를 통째로 비웠다 (다른 기기의 초기화). 기준선에는 아직 문서들이 남아 있다
+  for (const c of ['items', 'groups', 'sessions', 'orders', 'meta']) store[c].clear();
+  const again = await relaunch(state, store, { baseline: bl });
+  assert.deepEqual(ids(state.items), ['a'], '로컬은 그대로');
+  assert.equal(store.items.get('a')?.name, 'A', '다시 올라간다');
+  assert.deepEqual(store.sessions.get('s1')?.counts, { milk: 1 });
+  assert.ok(!again.backend.calls.some((c) => c.op === 'remove'), '없는 문서에 remove 를 보내지 않는다');
+  assert.ok(store.meta.has('store'), '표시 문서도 다시 쓴다');
+});
+
+test('26. 기준선 저장소: 다른 매장 코드의 기준선은 쓰지 않고, 저장에 실패해도 앱은 그대로 돈다', async () => {
+  const { createBaselineStore, backendScope, baselineKey, clearBaseline } = await import('../src/sync/baseline.js');
+  const mem = new Map();
+  const prev = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => {
+      if (v.length > 200) throw new Error('QuotaExceededError');
+      mem.set(k, v);
+    },
+    removeItem: (k) => mem.delete(k),
+  };
+  try {
+    assert.equal(backendScope({ name: 'firebase', info: { projectId: 'p', storeCode: 'cafe-1' } }), 'firebase:p:cafe-1');
+    const a = createBaselineStore('firebase:p:cafe-1');
+    assert.equal(a.key, baselineKey());
+    assert.equal(a.load(), null, '처음에는 없다');
+    assert.equal(a.save({ docs: { sessions: { s1: '{}' } }, meta: null }), true);
+    assert.deepEqual(a.load().docs.sessions, { s1: '{}' });
+    const b = createBaselineStore('firebase:p:cafe-2'); // 매장 코드를 바꿨다
+    assert.equal(b.load(), null, '다른 저장소의 기준선은 읽지 않는다');
+    assert.equal(a.save({ docs: { items: { x: 'y'.repeat(300) } }, meta: null }), false, '저장 공간이 부족하면 false');
+    assert.equal(clearBaseline(), true, '저장 공간이 모자라면 기준선을 버려 자리를 낸다');
+    assert.equal(mem.has(baselineKey()), false);
+    assert.doesNotThrow(() => a.clear());
+    globalThis.localStorage = undefined; // localStorage 를 아예 못 쓰는 환경
+    assert.equal(a.load(), null);
+    assert.equal(a.save({ docs: {}, meta: null }), false);
+  } finally {
+    globalThis.localStorage = prev;
+  }
+});
+
+test('27. 기준선이 없는 실행: 다른 기기가 그 뒤에 지운 수량은 되살리지 않는다 (원격 updatedAt 이 더 나중)', async () => {
+  // A 가 청귤청 7 · 우유 6 을 올린 뒤 앱이 죽고(기준선 없음), 그 사이 B 가 우유를 지웠다
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  store.sessions.set('s1', draft('s1', { counts: { 'cheonggyul-cheong': 7 }, updatedAt: '2026-09-06T02:00:00.000Z' }));
+  const state = baseState({
+    sessions: [draft('s1', { counts: { 'cheonggyul-cheong': 7, milk: 6 }, updatedAt: '2026-09-06T01:00:00.000Z' })],
+    ui: { tab: 'count', activeSessionId: 's1' },
+  });
+  const { backend } = await boot(state, {}, {}, store); // baseline 옵션 없음 = 기준선을 못 읽은 실행
+  assert.deepEqual(state.sessions[0].counts, { 'cheonggyul-cheong': 7 }, '지운 수량이 화면에 되살아나지 않는다');
+  assert.deepEqual(store.sessions.get('s1').counts, { 'cheonggyul-cheong': 7 }, '지운 수량을 원격에 다시 올리지 않는다');
+  assert.deepEqual(backend.calls.filter((c) => c.coll === 'sessions'), []);
+});
+
+test('27b. 기준선이 없는 실행: 못 보낸 입력(로컬 updatedAt 이 더 나중)은 그대로 살려서 올린다', async () => {
+  // 같은 상황이지만 이번엔 A 가 나중에 센 값이다 — 이것이 이 수정이 지키려는 바로 그 입력이다
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  store.sessions.set('s1', draft('s1', { counts: { 'cheonggyul-cheong': 7 }, updatedAt: '2026-09-06T01:00:00.000Z' }));
+  const state = baseState({
+    sessions: [draft('s1', { counts: { 'cheonggyul-cheong': 7, milk: 6 }, updatedAt: '2026-09-06T02:00:00.000Z' })],
+    ui: { tab: 'count', activeSessionId: 's1' },
+  });
+  await boot(state, {}, {}, store);
+  assert.deepEqual(state.sessions[0].counts, { 'cheonggyul-cheong': 7, milk: 6 }, '못 보낸 입력이 살아남는다');
+  assert.deepEqual(store.sessions.get('s1').counts, { 'cheonggyul-cheong': 7, milk: 6 }, '원격에도 올라간다');
+});
+
+test('28. 앱 상태를 저장 못 한 주기에는 기준선도 쓰지 않는다 (기준선이 상태보다 앞서지 않게)', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture();
+  const { app, sync } = await boot(state, {}, { baseline: bl }, store);
+  const before = bl.raw;
+  assert.ok(before);
+
+  // 저장 공간이 부족해 앱이 상태를 디스크에 남기지 못했다 (app.persist 가 stateSaved=false 로 알린다)
+  app.stateSaved = false;
+  state.sessions[0].counts['cheonggyul-cheong'] = 7;
+  sync.schedule();
+  await settle();
+  assert.deepEqual(store.sessions.get('s1').counts, { milk: 1, 'cheonggyul-cheong': 7 }, '보내기는 그대로 한다');
+  assert.equal(bl.raw, before, '디스크의 기준선은 디스크의 상태보다 앞서지 않는다');
+
+  // 저장이 다시 되면 기준선도 따라잡는다
+  app.stateSaved = true;
+  sync.close();
+  assert.notEqual(bl.raw, before);
+  assert.ok(JSON.parse(bl.raw).docs.sessions.s1.includes('cheonggyul-cheong'));
+});
+
+test('28b. 저장 공간 때문에 기준선을 버리면 다음 저장이 건너뛰어지지 않는다', async () => {
+  const bl = memBaseline();
+  const { store, state } = sharedDraftFixture();
+  const { sync } = await boot(state, {}, { baseline: bl }, store);
+  const saved = bl.raw && JSON.parse(bl.raw).docs;
+  assert.ok(saved);
+
+  sync.dropBaseline(); // app.persist 의 저장 공간 부족 경로
+  assert.equal(bl.clears, 1);
+  assert.equal(bl.raw, null);
+
+  sync.close(); // synced 는 그대로지만 마지막 저장 내용 메모를 지웠으므로 다시 쓴다
+  assert.deepEqual(bl.raw && JSON.parse(bl.raw).docs, saved, '한 번의 저장 공간 부족이 남은 실행 내내 기준선을 없애지 않는다');
+});

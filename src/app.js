@@ -9,8 +9,9 @@ import * as historyView from './ui/history.js';
 import * as itemsView from './ui/items.js';
 import * as settingsView from './ui/settings.js';
 import * as photoView from './ui/photo.js';
-import { pickBackend } from './sync/index.js';
+import { pickBackend, shareConfig } from './sync/index.js';
 import { createSync } from './sync/engine.js';
+import { createBaselineStore, backendScope, clearBaseline } from './sync/baseline.js';
 
 const TABS = [
   { id: 'count', label: '재고조사', ico: '📋' },
@@ -45,6 +46,13 @@ export const app = {
   /** 공유 저장소 동기화 (없으면 이 기기에만 저장) */
   sync: null,
   syncStatus: { state: 'off', backend: null, error: null, lastSyncAt: null },
+  syncChain: null, // 연결 시도를 한 줄로 세운다 (설정 변경이 겹쳐도 엔진이 둘 생기지 않게)
+  syncQueued: false,
+  syncRetryTimer: null,
+  syncRetryMs: 0,
+  syncFailLogged: false,
+  sdkRefreshHinted: false,
+  stateSaved: true, // 마지막 persist 가 앱 상태를 디스크에 남겼는가 (false 면 엔진이 기준선을 쓰지 않는다)
 
   /** 상태를 바꾸고 저장 + 전체 렌더 */
   update(fn) {
@@ -61,12 +69,38 @@ export const app = {
 
   /** @param {boolean} [fromRemote] 원격에서 받은 변경이면 다시 올리지 않는다 */
   persist(fromRemote = false) {
-    if (!save(this.state)) this.toast('저장 공간이 부족해 저장하지 못했습니다.');
+    let saved = save(this.state);
+    if (!saved) {
+      // 저장 공간이 모자라면 기준선을 버려 자리를 만들고 다시 시도한다 — 센 수량을 못 남기는 것보다 낫다
+      // (기준선이 없어도 다음 연결은 "원격에 없는 로컬 입력은 합쳐서 올린다"로 안전하게 시작한다).
+      // 엔진에게 맡겨야 마지막 저장 내용 메모도 같이 지워져, 다음 기준선 저장이 건너뛰어지지 않는다
+      if (this.sync?.dropBaseline) this.sync.dropBaseline();
+      else clearBaseline();
+      saved = save(this.state);
+      if (!saved) this.toast('저장 공간이 부족해 저장하지 못했습니다.');
+    }
+    // 상태를 디스크에 못 남긴 주기에는 기준선도 쓰지 않는다 (엔진 saveBaseline 이 이 값을 본다) —
+    // 기준선이 상태보다 앞서면 다음 실행이 낡은 로컬 값을 "아직 못 보낸 변경"으로 보고 원격에 덮어쓴다
+    this.stateSaved = saved;
     if (!fromRemote) this.sync?.schedule();
   },
 
   /** 공유 저장소 연결 (아티팩트 db / Firebase / 없음). 설정이 바뀌면 다시 부른다 */
-  async startSync() {
+  startSync() {
+    clearTimeout(this.syncRetryTimer);
+    this.syncRetryTimer = null;
+    if (this.syncQueued) return this.syncChain; // 이미 다음 연결이 줄 서 있다
+    this.syncQueued = true;
+    this.syncChain = Promise.resolve(this.syncChain)
+      .catch(() => {})
+      .then(() => {
+        this.syncQueued = false;
+        return this.connectSync();
+      });
+    return this.syncChain;
+  },
+
+  async connectSync() {
     if (this.sync) {
       const old = this.sync;
       this.sync = null;
@@ -77,20 +111,92 @@ export const app = {
       }
       old.close();
     }
+    // 붙는 동안에는 '이 기기만'이 아니라 '연결 중'으로 보여 준다 — 공유하기로 해 둔 기기인데 아직 안 붙은 상태다
+    if (shareConfig(this.state.settings) || globalThis.window?.__SHARED_BACKEND__ === 'local') {
+      this.setSyncStatus({ state: 'connecting', backend: null, error: null, lastSyncAt: null });
+    }
     let backend = null;
     try {
       backend = await pickBackend(this.state.settings);
     } catch (err) {
-      console.error(err);
+      if (this.syncFailLogged) console.debug('[sync] 다시 연결 실패', err?.message || err);
+      else console.error(err);
+      this.syncFailLogged = true;
       this.setSyncStatus({ state: 'error', backend: null, error: err?.message || String(err), lastSyncAt: null });
+      this.scheduleSyncRetry(); // 신호가 없어 SDK 를 못 받았을 뿐일 수 있다 — 앱을 다시 열지 않아도 스스로 붙는다
       return;
     }
     if (!backend) {
       this.setSyncStatus({ state: 'off', backend: null, error: null, lastSyncAt: null });
       return;
     }
-    this.sync = createSync(this, backend, { log: (...a) => console.debug('[sync]', ...a) });
+    this.syncRetryMs = 0;
+    this.syncFailLogged = false;
+    this.sync = createSync(this, backend, {
+      log: (...a) => console.debug('[sync]', ...a),
+      // 마지막으로 원격과 맞춘 상태를 이 기기에 남긴다 — 앱을 다시 열어도 아직 못 보낸 입력을 알아본다
+      baseline: createBaselineStore(backendScope(backend)),
+    });
     this.sync.start();
+  },
+
+  /**
+   * 앱을 열 때 Firebase SDK 를 못 받았으면(지하 창고처럼 신호가 없을 때) 브라우저가 그 주소를 "실패"로 기억해서
+   * 이 화면에서는 몇 번을 다시 불러도 같은 오류가 난다. gstatic 의 firestore 모듈이 app 모듈을 절대 주소로
+   * 불러오기 때문에 주소를 바꿔 다시 받는 우회도 통하지 않는다 — 새로고침만이 확실한 복구다.
+   */
+  needsSdkReload() {
+    return !this.sync && this.syncStatus.state === 'error' && /SDK/.test(this.syncStatus.error || '');
+  },
+
+  /** 지금 새로고침해도 괜찮은가 (세는 중이면 방해하지 않는다) */
+  safeToReload() {
+    if (this.modal) return false;
+    const el = document.activeElement;
+    return !(el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  },
+
+  /**
+   * 신호가 돌아왔는데 SDK 를 못 받아 멈춰 있으면 스스로 살아난다.
+   * 화면이 꺼져 있을 때(백그라운드)는 조용히 새로고침해 두고, 보고 있을 때는 세는 중이 아닐 때만 한 번 새로고침한다.
+   * 센 수량은 이 기기에 그대로 남아 있어 새로고침해도 사라지지 않는다 (기준선 저장).
+   */
+  recoverBySdkReload({ hidden = false } = {}) {
+    if (!this.needsSdkReload() || !this.root) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (hidden) return this.reloadForSync();
+    if (this.sdkRefreshHinted) return;
+    this.sdkRefreshHinted = true;
+    if (this.safeToReload()) return this.reloadForSync();
+    this.toast('연결이 돌아왔습니다. 화면을 새로고침하면 공유가 이어집니다 (센 수량은 그대로 남아 있습니다).', 6000);
+  },
+
+  reloadForSync() {
+    this.flushNow();
+    try {
+      location.reload();
+    } catch (err) {
+      console.warn('[sync] reload failed', err);
+    }
+  },
+
+  /** 연결에 실패했으면 점점 뜸하게 다시 시도한다 (5초 → 최대 1분) */
+  scheduleSyncRetry() {
+    if (this.syncRetryTimer || this.sync) return;
+    this.syncRetryMs = Math.min(60000, this.syncRetryMs ? this.syncRetryMs * 2 : 5000);
+    this.syncRetryTimer = setTimeout(() => {
+      this.syncRetryTimer = null;
+      if (!this.sync) this.startSync();
+    }, this.syncRetryMs);
+  },
+
+  /** 아직 안 보낸 입력을 지금 보낸다 (앱이 백그라운드로 가거나 닫히기 직전 — iOS 는 곧 정지되어 타이머가 안 돈다) */
+  flushNow() {
+    try {
+      this.sync?.flush();
+    } catch (err) {
+      console.warn('[sync] flush failed', err);
+    }
   },
 
   setSyncStatus(st) {
@@ -105,7 +211,10 @@ export const app = {
     const st = this.syncStatus || { state: 'off' };
     const label = { on: '공유 중', connecting: '연결 중', error: '연결 안 됨', off: '이 기기만' }[st.state] || st.state;
     const cls = { on: 'ok', connecting: '', error: 'danger', off: '' }[st.state] || '';
-    return `<span id="sync-pill" class="pill ${cls} sync-pill" title="${esc(st.error || '')}" data-action="tab" data-tab="settings" role="button">${esc(label)}</span>`;
+    const stuck = this.needsSdkReload();
+    const action = stuck ? 'sync-reload' : 'tab';
+    const hint = stuck ? '눌러서 다시 연결 (센 수량은 그대로 남습니다)' : st.error || '';
+    return `<span id="sync-pill" class="pill ${cls} sync-pill" title="${esc(hint)}" data-action="${action}" data-tab="settings" role="button">${esc(label)}${stuck ? ' ↻' : ''}</span>`;
   },
 
   /** 원격 변경이 반영되면 화면을 다시 그리되, 입력 중인 칸의 포커스는 지킨다 */
@@ -293,6 +402,7 @@ export const app = {
         st.ui.activeSessionId = null;
       });
     };
+    this.actions['sync-reload'] = () => this.reloadForSync();
     this.actions['recovery-export'] = () => settingsView.downloadBackup(this, exportJSON(this.state));
     this.actions['recovery-reset'] = () => {
       if (!confirm(`모든 데이터를 지우고 처음 상태로 돌릴까요?${this.syncStatus?.state === 'on' ? '\n(공유 저장소의 데이터도 같이 지워집니다. 다른 기기에서 세는 중인 초안은 남습니다)' : ''}`)) return;
@@ -348,8 +458,29 @@ export const app = {
       if (document.hidden || !typing) refreshFromStorage();
       else staleFromOtherTab = true;
     });
+    // 앱이 백그라운드로 가거나(홈 버튼) 닫히기 직전에는 디바운스(0.2초)를 기다리지 않고 바로 보낸다.
+    // iOS 홈 화면 앱은 그 사이에 정지되면 타이머가 돌지 않아 방금 센 수량이 전송되지 못한 채 남는다
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && staleFromOtherTab) refreshFromStorage();
+      if (document.hidden) {
+        this.flushNow();
+        // 화면이 꺼진 김에 조용히 되살린다 — 돌아왔을 때 이미 붙어 있다
+        if (this.needsSdkReload()) this.startSync().then(() => this.recoverBySdkReload({ hidden: true }));
+        return;
+      }
+      if (staleFromOtherTab) refreshFromStorage();
+      if (!this.sync && this.syncStatus.state === 'error') {
+        this.syncRetryMs = 0; // 다시 앞에 왔다 = 사람이 보고 있다. 기다리지 말고 바로 붙어 본다
+        this.startSync().then(() => this.recoverBySdkReload());
+      }
+    });
+    window.addEventListener('pagehide', () => this.flushNow());
+    window.addEventListener('freeze', () => this.flushNow()); // 크로미움 계열의 정지 직전 신호
+    window.addEventListener('online', () => {
+      this.flushNow();
+      if (!this.sync) {
+        this.syncRetryMs = 0;
+        this.startSync().then(() => this.recoverBySdkReload());
+      }
     });
 
     this.render();

@@ -10,6 +10,16 @@
 //   - 서버 확답(fromCache=false) 없이 캐시만 비어 있을 때는 "원격이 비었다"고 판단하지 않는다 (남의 데이터를 시드로 덮어쓰지 않게).
 //   - 장부마다 초안은 하나만: 기기마다 자동으로 생긴 초안이 겹치면 가장 먼저 만든 것을 남기고 나머지의 입력은
 //     거기에 합친다. 세고 있던 초안이 원격에서 사라져도(다른 기기의 정리와 엇갈림) 입력을 버리지 않고 합치거나 다시 올린다.
+//   - 마지막으로 맞춘 상태(synced)는 이 기기에 저장한다(opts.baseline · sync/baseline.js). 메모리에만 두면 앱을 다시 열 때
+//     기준선이 비어 "내가 방금 고친 것"과 "원격이 고친 것"을 구별하지 못하고 원격이 통째로 이겨, 아직 보내지 못한 입력이
+//     소리 없이 사라진다. 기준선이 아예 없는 문서(이 기기가 처음 맞추는 문서)는 원격을 기준으로 삼되, 재고조사처럼
+//     항목별로 합치는 문서는 원격에 없는 로컬 입력을 얹어 준다 — 남의 값을 덮지 않으면서 내 입력도 버리지 않는다.
+//     단 그 얹기는 문서의 updatedAt 으로 막는다: 원격이 더 나중에 고쳐졌으면 얹지 않는다. "원격에 없는 로컬 입력"은
+//     아직 못 보낸 값일 수도, 다른 기기가 그 뒤에 지운 값일 수도 있는데 기준선 없이는 둘을 가를 수 없고, 되살리면
+//     남의 삭제를 덮어쓰기 때문이다(지워진 수량이 발주량에 다시 들어간다). 기준선이 있는 두 번째 실행부터는 이
+//     어림짐작 없이 정확히 가른다 — 그래서 이 규칙이 쓰이는 곳은 기기마다 딱 한 번, 처음 붙는 실행뿐이다.
+//     기준선은 언제나 앱 상태를 저장한 뒤에만 쓴다 (상태 저장이 실패한 주기에는 아예 쓰지 않는다) — 기준선이
+//     상태보다 앞서면 다음 실행이 낡은 로컬 값을 "아직 못 보낸 변경"으로 보고 원격에 덮어쓴다.
 //   - 자기 쓰기의 메아리: 백엔드는 쓰기를 확인(ack)하기 전에 그 내용을 스냅샷으로 되돌려 준다(Firestore 의 hasPendingWrites,
 //     로컬 백엔드는 동기). 보내는 중인 문서(inflight)와 같은 스냅샷은 원격 변경으로 치지 않는다 — 그 사이에 한 로컬 입력을
 //     지키고(다음 flush 가 그 차이만 보낸다) 화면도 다시 그리지 않는다. 병합 결과가 로컬과 같은 스냅샷도 다시 그리지 않는다.
@@ -101,6 +111,13 @@ export function clone(x) {
 const isEmptyDraft = (s) => s.status === 'draft' && !Object.keys(s.counts || {}).length && !Object.keys(s.overrides || {}).length;
 
 /**
+ * 기준선이 없을 때만 쓰는 판단: 원격 문서가 로컬보다 나중에 고쳐졌는가 (문서 안의 updatedAt 비교, ISO 문자열이라 사전순 = 시간순).
+ * 원격이 더 나중이면 원격 쪽이 더 새 뜻이다 — 원격에 없는 로컬 입력은 "아직 못 보낸 값"이 아니라 "그 뒤에 다른 기기가 지운 값"으로 본다.
+ * 시각이 없거나 같으면 판단할 수 없으므로 false(= 입력을 지키는 쪽)를 돌려준다.
+ */
+const remoteNewer = (remoteDoc, localDoc) => String(remoteDoc?.updatedAt || '') > String(localDoc?.updatedAt || '');
+
+/**
  * dup 초안의 입력(counts·overrides·filled)을 keep 초안에 합친다. keep 에 이미 센 품목은 그대로 둔다 —
  * 그래야 어느 기기가 어떤 순서로 합쳐도 같은 결과가 된다. 옮긴 것이 있으면 true.
  */
@@ -190,13 +207,17 @@ function sortForState(coll, docs, prevOrder) {
 /**
  * @param {object} app  { state, persist(), onRemoteChange(), setSyncStatus(status) }
  * @param {object} backend  위 인터페이스
- * @param {object} [opts]  { debounceMs, readyTimeoutMs, log }
+ * @param {object} [opts]  { debounceMs, readyTimeoutMs, log, baseline }
+ *   baseline: { load(): snapshot|null, save(snapshot) } — 마지막으로 맞춘 상태를 앱과 함께 남겨 두는 곳 (sync/baseline.js)
  */
 export function createSync(app, backend, opts = {}) {
   const debounceMs = opts.debounceMs ?? 200;
   const readyTimeoutMs = opts.readyTimeoutMs ?? 8000;
   const log = opts.log || (() => {});
+  const baselineStore = opts.baseline || null;
   const synced = { items: new Map(), groups: new Map(), sessions: new Map(), orders: new Map(), meta: null };
+  let baselineLoaded = false; // 저장해 둔 기준선을 읽어 왔다 = 이 기기가 전에 이 저장소와 맞춘 적이 있다
+  let baselineJson = null; // 마지막으로 저장한 내용 (같으면 다시 쓰지 않는다)
   const remote = { items: null, groups: null, sessions: null, orders: null, meta: undefined, store: undefined }; // 첫 스냅샷 전: null/undefined
   let storeMarked = false; // meta/store 표시가 원격에 있는가 (우리가 썼거나 받았거나)
   const definitive = new Set(); // fromCache=false 스냅샷을 받은 컬렉션
@@ -218,9 +239,73 @@ export function createSync(app, backend, opts = {}) {
     app.setSyncStatus?.(status);
   };
 
+  /** 저장해 둔 기준선을 메모리 맵으로 되살린다 (첫 스냅샷을 받기 전에) */
+  function loadBaseline() {
+    if (!baselineStore) return;
+    let saved = null;
+    try {
+      saved = baselineStore.load();
+    } catch (e) {
+      log('baseline load failed', e?.message || e);
+    }
+    if (!saved || typeof saved !== 'object') return;
+    let n = 0;
+    for (const coll of COLLECTIONS) {
+      const docs = saved.docs?.[coll];
+      if (!docs || typeof docs !== 'object') continue;
+      for (const [id, json] of Object.entries(docs)) {
+        if (typeof json !== 'string') continue;
+        synced[coll].set(id, json);
+        n++;
+      }
+    }
+    if (typeof saved.meta === 'string') {
+      synced.meta = saved.meta;
+      n++;
+    }
+    baselineLoaded = n > 0;
+    log('baseline loaded', n, 'docs');
+  }
+
+  /**
+   * 기준선을 이 기기에 남긴다. 언제나 앱 상태를 저장한 뒤에만 부른다 — 기준선이 상태보다 앞서면
+   * 아직 보내지 않은 로컬 변경을 "원격이 지운 것"으로 오해해 지워 버린다. 뒤처지는 것은 안전하다.
+   * 앱이 상태를 디스크에 못 남긴 주기(app.stateSaved === false, 저장 공간 부족)에는 아예 쓰지 않는다:
+   * 그때 쓰면 디스크의 기준선이 디스크의 상태보다 앞서서, 다음 실행이 낡은 로컬 값을 아직 못 보낸
+   * 변경으로 보고 원격에 덮어쓴다.
+   */
+  function saveBaseline() {
+    if (!baselineStore || app.stateSaved === false) return;
+    const docs = {};
+    for (const coll of COLLECTIONS) docs[coll] = Object.fromEntries(synced[coll]);
+    const json = JSON.stringify({ docs, meta: synced.meta ?? null });
+    if (json === baselineJson) return; // 바뀐 것이 없으면 쓰지 않는다
+    baselineJson = json;
+    try {
+      baselineStore.save({ v: 1, backend: backend.name, savedAt: new Date().toISOString(), docs, meta: synced.meta ?? null });
+    } catch (e) {
+      log('baseline save failed', e?.message || e); // 저장하지 못해도 앱은 그대로 (다음 실행은 합치기로 시작)
+    }
+  }
+
+  /**
+   * 저장 공간이 모자랄 때 앱이 부른다: 기준선을 버려 앱 상태가 들어갈 자리를 낸다.
+   * 마지막 저장 내용 메모(baselineJson)도 같이 지운다 — 안 지우면 다음 saveBaseline 이 "바뀐 것 없음"으로
+   * 건너뛰어, 한 번의 저장 공간 부족이 남은 실행 내내 기준선을 없앤 채로 둔다.
+   */
+  function dropBaseline() {
+    baselineJson = null;
+    try {
+      baselineStore?.clear?.();
+    } catch (e) {
+      log('baseline clear failed', e?.message || e);
+    }
+  }
+
   function start() {
     if (started) return;
     started = true;
+    loadBaseline();
     setStatus({ state: 'connecting', error: null });
     for (const coll of COLLECTIONS) {
       unsubs.push(
@@ -289,7 +374,13 @@ export function createSync(app, backend, opts = {}) {
     const partial = !empty && !remote.store; // 문서는 있는데 "다 올렸다" 표시가 없다 → 다른 기기가 올리는 중이거나 끊긴 저장소
     log('bootstrap', reason, empty ? 'remote empty → push local' : partial ? 'remote partial → union' : 'remote has data → merge');
     const s = app.state;
-    if (!empty) {
+    if (empty) {
+      // 원격이 정말 비어 있다(서버 확답). 저장해 둔 기준선은 지워진 저장소의 것이므로 버린다 —
+      // 남겨 두면 flush 가 있지도 않은 문서에 remove 를 보내고, 로컬 문서를 다시 올리지 않는다
+      for (const coll of COLLECTIONS) synced[coll].clear();
+      synced.meta = null;
+      baselineLoaded = false;
+    } else {
       // 빈 초안은 원격에 같은 장부의 초안이 있으면 버린다 (기기마다 자동으로 생긴 초안이 겹치지 않게)
       const remoteSessions = remote.sessions || new Map();
       const hasRemoteDraft = (book) => [...remoteSessions.values()].some((x) => x.status === 'draft' && (x.book || 'product') === book);
@@ -298,32 +389,44 @@ export function createSync(app, backend, opts = {}) {
       // 품목·분류는 원격이 기준 (로컬의 기본 시드를 올리지 않는다). 단 올리다 만 저장소(partial)면 원격에 없는 로컬 문서는
       // 남겨서 같이 올린다 — 첫 push 도중 새로고침하거나 두 번째 기기가 그 사이에 들어와도 품목이 잘려 나가지 않게
       for (const coll of ['items', 'groups']) {
-        if (remote[coll] && remote[coll].size) {
-          const prev = new Map((s[coll] || []).map((d, i) => [d.id, i]));
-          const docs = new Map();
-          for (const [id, d] of remote[coll]) {
-            docs.set(id, clone(d));
-            synced[coll].set(id, stable(d));
-          }
-          if (partial) for (const [id, d] of localDocs(s, coll)) if (!docs.has(id)) docs.set(id, d);
-          s[coll] = sortForState(coll, docs, prev);
+        if (!remote[coll] || !remote[coll].size) continue;
+        // 전에 맞춰 본 적이 있으면(기준선이 있다) 세 값을 비교해 아직 보내지 못한 로컬 수정(이름·기준량 등)을 살린다
+        if (baselineLoaded) {
+          applyRemote(coll, true, partial);
+          continue;
         }
+        const prev = new Map((s[coll] || []).map((d, i) => [d.id, i]));
+        const docs = new Map();
+        for (const [id, d] of remote[coll]) {
+          docs.set(id, clone(d));
+          synced[coll].set(id, stable(d));
+        }
+        if (partial) for (const [id, d] of localDocs(s, coll)) if (!docs.has(id)) docs.set(id, d);
+        s[coll] = sortForState(coll, docs, prev);
       }
-      for (const coll of ['sessions', 'orders']) applyRemote(coll, true);
-      if (remote.meta) {
+      for (const coll of ['sessions', 'orders']) applyRemote(coll, true, partial);
+      // 설정도 기준선이 있으면 세 값을 비교한다 (오프라인에서 바꾼 발주 요일 등이 원격 문서에 덮이지 않게).
+      // 처음 합류할 때는 원격이 기준 — 이 기기의 기본 설정을 남의 저장소에 밀어 넣지 않는다
+      if (baselineLoaded) applyRemote('meta', true);
+      else if (remote.meta) {
         synced.meta = stable(remote.meta);
         s.settings = { ...s.settings, ...clone(remote.meta) };
       }
       app.persist(true);
       app.onRemoteChange?.();
     }
+    saveBaseline();
     // 원격에 없는 로컬 문서(첫 기기면 전부)를 올린다. 'on'(공유 중)은 그 첫 push 가 다 끝난 뒤에 flush 가 표시한다 —
     // 올리는 동안(품목 100여 개면 수십 초) 이미 "공유 중"으로 보이면 다 올라간 줄 알고 닫을 수 있다
     schedule(0);
   }
 
-  /** 원격 스냅샷을 로컬에 반영 (바뀐 문서만, 그 위에 미전송 로컬 변경을 다시 얹음) */
-  function applyRemote(coll, silent = false) {
+  /**
+   * 원격 스냅샷을 로컬에 반영 (바뀐 문서만, 그 위에 미전송 로컬 변경을 다시 얹음)
+   * @param {boolean} [silent] 부트스트랩에서 호출 — 저장·다시 그리기는 부트스트랩이 한 번에 한다
+   * @param {boolean} [keepLocal] 올리다 만 저장소(meta/store 표시 없음) — 원격에 없는 문서를 지우지 않고 다시 올린다
+   */
+  function applyRemote(coll, silent = false, keepLocal = false) {
     const s = app.state;
     let changed = false;
     let needsPush = false; // 반영하면서 생긴 로컬 변경(초안 합치기·정리)이 있어 flush 가 필요한가
@@ -360,6 +463,13 @@ export function createSync(app, backend, opts = {}) {
           // 아직 보내지 않은 로컬 변경은 원격 문서 위에 다시 얹는다
           const localPatch = syncedObj && localDoc ? diff(syncedObj, localDoc) : {};
           const merged = Object.keys(localPatch).length ? applyPatch(clone(d), localPatch) : clone(d);
+          // 기준선이 없는 문서(이 기기가 처음 맞춘다)는 무엇이 새 값인지 알 수 없어 원격을 기준으로 삼는다.
+          // 다만 세고 있는 초안은 원격에 없는 로컬 입력만 얹어 준다 — 남의 값을 덮지 않으면서 내 입력도 버리지 않는다.
+          // 원격이 더 나중에 고쳐졌으면(updatedAt) 얹지 않는다: 그 로컬 입력은 아직 못 보낸 값이 아니라 다른 기기가
+          // 그 뒤에 지운 값일 수 있고, 되살리면 남의 삭제를 덮어써 지워진 수량이 발주량에 다시 들어간다
+          if (!syncedObj && localDoc && MERGE_DOC.has(coll) && merged.status === 'draft' && !remoteNewer(d, localDoc)) {
+            mergeDraft(merged, localDoc);
+          }
           next.set(id, merged);
           synced[coll].set(id, json);
           if (!localDoc || stable(merged) !== stable(localDoc)) changed = true; // 병합 결과가 로컬과 같으면 다시 그릴 것도 없다
@@ -372,6 +482,12 @@ export function createSync(app, backend, opts = {}) {
         synced[coll].delete(id);
         const localDoc = local.get(id);
         if (!localDoc) continue; // 로컬에서도 이미 지운 문서 (우리 remove 의 메아리) — 바뀐 게 없다
+        if (keepLocal) {
+          // 올리다 만 저장소: 원격에 없는 것은 "지워진 것"이 아니라 "아직 안 올라간 것" — 기준선만 지워 다시 올린다
+          next.set(id, localDoc);
+          needsPush = true;
+          continue;
+        }
         changed = true;
         if (coll === 'sessions' && localDoc.status === 'draft' && !isEmptyDraft(localDoc)) {
           // 세고 있던 초안이 원격에서 사라졌다 (다른 기기의 중복 정리와 엇갈린 경우). 입력은 버리지 않는다:
@@ -402,13 +518,17 @@ export function createSync(app, backend, opts = {}) {
       setStatus({ lastSyncAt: Date.now() });
       if (needsPush) schedule(); // 합치거나 버린 초안은 원격에도 반영해야 한다 (부트스트랩은 스스로 flush 를 예약한다)
     }
+    if (!silent) saveBaseline(); // 앱 상태를 저장한 뒤에 (부트스트랩은 끝에서 한 번에 저장한다)
     return changed;
   }
 
   /** 로컬 변경을 곧 원격에 보낸다 (persist 뒤에 호출) */
   function schedule(ms = debounceMs) {
-    if (closed || !ready) return;
+    if (closed) return;
     dirty = true;
+    // 부트스트랩 전에는 원격을 아직 모르니 보내지 않는다. 표시만 해 두면 부트스트랩이 끝나며 한꺼번에 나간다
+    // (표시조차 하지 않으면 '연결 중'에 한 입력이 아무 데도 예약되지 않는다)
+    if (!ready) return;
     clearTimeout(timer);
     timer = setTimeout(() => flush(), ms);
   }
@@ -521,6 +641,7 @@ export function createSync(app, backend, opts = {}) {
         setStatus({ state: 'on', error: null, lastSyncAt: Date.now() });
       }
     })().finally(() => {
+      saveBaseline(); // 확인(ack)된 만큼만 기준선에 남는다 — 중간에 앱이 죽어도 못 보낸 변경은 다음 실행에 다시 나간다
       flushing = null;
       if (dirty && !backoff) schedule(0);
     });
@@ -540,6 +661,7 @@ export function createSync(app, backend, opts = {}) {
 
   function close() {
     if (closed) return;
+    saveBaseline();
     const pending = dirty || timer != null;
     closed = true;
     clearTimeout(timer);
@@ -557,6 +679,7 @@ export function createSync(app, backend, opts = {}) {
     flush,
     drain,
     close,
+    dropBaseline,
     get status() {
       return status;
     },
@@ -565,5 +688,9 @@ export function createSync(app, backend, opts = {}) {
     },
     /** 테스트용: 마지막으로 맞춘 상태 */
     _synced: synced,
+    /** 테스트용: 저장해 둔 기준선을 읽어 왔는가 */
+    get _baselineLoaded() {
+      return baselineLoaded;
+    },
   };
 }

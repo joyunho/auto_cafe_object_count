@@ -204,6 +204,7 @@ export const changes = {
     app.set(() => {
       if (v == null) delete sess.overrides[id];
       else sess.overrides[id] = v;
+      sess.updatedAt = new Date().toISOString(); // 엔진이 "누가 더 나중에 고쳤나"로 쓰는 값 — 발주 수량 수정도 올려야 한다
     });
     patchOrderView(app, id);
   },
@@ -215,6 +216,7 @@ export const actions = {
     app.set(() => {
       const sess = app.activeSession();
       delete sess.overrides[id];
+      sess.updatedAt = new Date().toISOString();
     });
     patchOrderView(app, id);
   },
