@@ -1,0 +1,18 @@
+// Firestore 보안 규칙 — 카페 재고관리 앱 공유 저장소용
+// Firebase 콘솔 → Firestore Database → 규칙 탭에 이 파일 내용을 그대로 붙여 넣고 "게시".
+//
+// 앱은 stores/{storeCode}/... 아래에만 읽고 씁니다 (storeCode 는 src/data/share-config.js 또는 설정 탭의 값).
+// storeCode 는 앱 페이지 안에 들어 있으므로 링크를 아는 사람은 누구나 그 매장의 데이터를 읽고 쓸 수 있습니다
+// (프로토타입 수준의 보호). 유출되면 storeCode 를 새 무작위 문자열로 바꿔 배포하면 됩니다.
+// 그 밖의 모든 경로(다른 컬렉션·루트)는 거부합니다.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /stores/{code}/{document=**} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

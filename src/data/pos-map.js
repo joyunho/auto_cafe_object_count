@@ -105,7 +105,7 @@ export const PRODUCT_MAP = {
   '토마토주스': { menu: '토마토주스', variant: 'ICE' },
   '포도주스': { unknown: '착즙포도주스를 병째 파는지, 1병으로 몇 잔인지 확인 전' },
   '노아주스': { unknown: '노아 4종(오렌지·당근·망고·키위) 중 무엇인지 POS에 없음' },
-  '어린이 사과주스': { unknown: '시트의 어느 품목인지 확인 전' },
+  '어린이 사과주스': { item: 'sweet-apple', qty: 1, note: '사용자 확인: 달콤사과(병 주스)' },
   '골드메달사과주스': { item: 'golden-apple-juice', qty: 1 },
   '에비앙': { item: 'evian', qty: 1 },
   // ── 브런치/밀키트 (레시피 없음 — 1인분 판매 수만 집계) ──
@@ -144,9 +144,10 @@ export const INGREDIENT_MAP = {
   '청귤청': { item: 'cheonggyul-cheong', perPackage: 2200, unit: 'g', note: '제주청귤청 2.2kg' },
   '딸기청': { item: 'strawberry-cheong', perPackage: null, unit: 'g', note: '1단지 무게 확인 전' },
   '블루베리청': { item: 'blueberry-cheong', perPackage: null, unit: 'g', note: '1단지 무게 확인 전' },
-  '레몬청': { item: 'lemon-syrup', perPackage: 2000, unit: 'g', note: '쏘스윗업 레몬 시럽 2kg (구매표에 ◇확인 표시)' },
-  '자몽청': { item: 'grapefruit', perPackage: 2000, unit: 'g', note: '쏘스윗업 자몽 시럽 2kg (구매표에 ◇확인 표시)' },
-  '청포도청': { item: 'green-grape', perPackage: 2000, unit: 'g', note: '쏘스윗업 청포도 시럽 2kg (구매표에 ◇확인 표시)' },
+  // 레몬: 사용자 확인 — 시럽이 아니라 과일 레몬(품목 lemon-syrup = "레몬(과일)"). 레몬청은 과일 레몬으로 만드는 것으로 봄.
+  '레몬청': { item: 'lemon-syrup', perPackage: null, unit: 'g', note: '사용자 확인: 레몬은 과일 — 레몬청은 과일 레몬으로 만드는 것으로 봄. 레몬 1개에서 청 몇 g 나오는지 확인 전' },
+  '자몽청': { item: 'grapefruit', perPackage: 2000, unit: 'g', note: '사용자 확인: 시럽 — 용량은 구매표의 쏘스윗업 자몽 시럽 2kg (◇확인 표시)' },
+  '청포도청': { item: 'green-grape', perPackage: 2000, unit: 'g', note: '사용자 확인: 시럽 — 용량은 구매표의 쏘스윗업 청포도 시럽 2kg (◇확인 표시)' },
   '아이스티': { item: 'ice-tea', perPackage: 2000, unit: 'g', note: '복숭아 아이스티 시럽 2kg (1box=6)' },
   '키위시럽': { item: 'kiwi-sauce', perPackage: 2000, unit: 'g', note: '포모나 키위 스무디 2kg' },
   '배도라지청': { item: 'pear-bellflower-tea', perPackage: null, unit: 'g', note: '470g 병(구매표에 ◇확인 표시)·1박스 병 수 확인 전' },
@@ -166,7 +167,7 @@ export const INGREDIENT_MAP = {
   // 가니쉬·원물 — 1포장 개수·무게 확인 전
   '오렌지 가니쉬': { item: 'orange-garnish', perPackage: null, unit: 'serving', note: '1잔 조각 수·1포장 조각 수 확인 전 — 잔 수만' },
   '가니쉬': { item: null, note: '레시피에 종류 없이 "가니쉬"로만 적힘 — 어떤 가니쉬인지 확인 전' },
-  '레몬 가니쉬': { item: null, note: '시트의 어느 품목(레몬 2종)인지·1봉 조각 수 확인 전' },
+  '레몬 가니쉬': { item: null, note: '사용자 확인: 과일 레몬(레몬(과일) 품목) — 생레몬 1개에서 몇 조각(몇 잔) 나오는지 확인 전이라 확정 연결표에서는 비움 (추정값 층에서 레몬 개수로 환산)' },
   '대추 가니쉬': { item: null, note: '1잔에 대추 몇 개인지 확인 전 (대추차의 "대추 5개"만 집계)' },
   '대추': { item: 'jujube', perPackage: null, unit: 'ea', note: '1포장 개수 확인 전' },
   '잣': { item: 'pine-nut', perPackage: null, unit: 'ea', note: '1포장 개수(무게) 확인 전' },

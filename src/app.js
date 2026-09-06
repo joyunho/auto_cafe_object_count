@@ -9,6 +9,8 @@ import * as historyView from './ui/history.js';
 import * as itemsView from './ui/items.js';
 import * as settingsView from './ui/settings.js';
 import * as photoView from './ui/photo.js';
+import { pickBackend } from './sync/index.js';
+import { createSync } from './sync/engine.js';
 
 const TABS = [
   { id: 'count', label: '재고조사', ico: '📋' },
@@ -40,6 +42,9 @@ export const app = {
   actions: {},
   inputs: {},
   changes: {},
+  /** 공유 저장소 동기화 (없으면 이 기기에만 저장) */
+  sync: null,
+  syncStatus: { state: 'off', backend: null, error: null, lastSyncAt: null },
 
   /** 상태를 바꾸고 저장 + 전체 렌더 */
   update(fn) {
@@ -54,8 +59,58 @@ export const app = {
     this.persist();
   },
 
-  persist() {
+  /** @param {boolean} [fromRemote] 원격에서 받은 변경이면 다시 올리지 않는다 */
+  persist(fromRemote = false) {
     if (!save(this.state)) this.toast('저장 공간이 부족해 저장하지 못했습니다.');
+    if (!fromRemote) this.sync?.schedule();
+  },
+
+  /** 공유 저장소 연결 (아티팩트 db / Firebase / 없음). 설정이 바뀌면 다시 부른다 */
+  async startSync() {
+    if (this.sync) {
+      const old = this.sync;
+      this.sync = null;
+      try {
+        await old.drain(); // 방금 한 입력을 보내고 나서 끊는다
+      } catch (err) {
+        console.warn('[sync] drain failed', err);
+      }
+      old.close();
+    }
+    let backend = null;
+    try {
+      backend = await pickBackend(this.state.settings);
+    } catch (err) {
+      console.error(err);
+      this.setSyncStatus({ state: 'error', backend: null, error: err?.message || String(err), lastSyncAt: null });
+      return;
+    }
+    if (!backend) {
+      this.setSyncStatus({ state: 'off', backend: null, error: null, lastSyncAt: null });
+      return;
+    }
+    this.sync = createSync(this, backend, { log: (...a) => console.debug('[sync]', ...a) });
+    this.sync.start();
+  },
+
+  setSyncStatus(st) {
+    this.syncStatus = st;
+    const pill = document.getElementById('sync-pill');
+    if (pill) pill.outerHTML = this.syncPill();
+    if (this.state.ui.tab === 'settings' && document.getElementById('sync-card')) this.render({ restoreFocus: true });
+  },
+
+  /** 상단 표시: 공유 중 / 이 기기만 / 연결 안 됨 */
+  syncPill() {
+    const st = this.syncStatus || { state: 'off' };
+    const label = { on: '공유 중', connecting: '연결 중', error: '연결 안 됨', off: '이 기기만' }[st.state] || st.state;
+    const cls = { on: 'ok', connecting: '', error: 'danger', off: '' }[st.state] || '';
+    return `<span id="sync-pill" class="pill ${cls} sync-pill" title="${esc(st.error || '')}" data-action="tab" data-tab="settings" role="button">${esc(label)}</span>`;
+  },
+
+  /** 원격 변경이 반영되면 화면을 다시 그리되, 입력 중인 칸의 포커스는 지킨다 */
+  onRemoteChange() {
+    this.render({ restoreFocus: true });
   },
 
   go(tab) {
@@ -146,8 +201,10 @@ export const app = {
     }
   },
 
-  render() {
+  render({ restoreFocus = false } = {}) {
     const s = this.state;
+    const active = restoreFocus ? document.activeElement : null;
+    const focusKey = active?.dataset?.input && active.dataset.id ? { input: active.dataset.input, id: active.dataset.id, start: active.selectionStart, end: active.selectionEnd } : null;
     const tab = VIEWS[s.ui.tab] ? s.ui.tab : 'count';
     const book = this.bookInfo();
     const next = nextOrderDate(new Date(), this.orderDays());
@@ -166,7 +223,7 @@ export const app = {
           <h1>${esc(s.settings.storeName || '카페')} 재고관리</h1>
           <div class="sub">${esc(book.short)} 다음 발주일 ${esc(nextLabel)} · ${esc(s.settings.supplierName || '')}</div>
         </div>
-        <div class="row">${VIEWS[tab].headerActions ? VIEWS[tab].headerActions(s) : ''}</div>
+        <div class="row">${this.syncPill()}${VIEWS[tab].headerActions ? VIEWS[tab].headerActions(s) : ''}</div>
       </header>
       <main class="view" data-tab="${tab}">${body}</main>
       <nav class="tabbar" aria-label="주요 탭">
@@ -180,6 +237,25 @@ export const app = {
     this.root.innerHTML = html;
     linkLabels(this.root);
     if (VIEWS[tab].afterRender) VIEWS[tab].afterRender(s, this);
+    if (focusKey) {
+      const el = this.root.querySelector(`[data-input="${CSS.escape(focusKey.input)}"][data-id="${CSS.escape(focusKey.id)}"]`);
+      if (el) {
+        el.focus({ preventScroll: true });
+        try {
+          if (focusKey.start != null && el.type !== 'number') el.setSelectionRange(focusKey.start, focusKey.end);
+          else if (el.type === 'number' && el.value) {
+            // 숫자 칸은 선택 범위를 읽고 되살릴 수 없고, 다시 만든 칸에 focus() 하면 커서가 맨 앞에 놓인다 (이어서 치면 앞에 붙어 1→21).
+            // 값을 다시 넣으면 커서가 끝으로 가므로 이어서 친 숫자가 뒤에 붙는다 (1→12)
+            const v = el.value;
+            el.value = '';
+            el.value = v;
+          }
+        } catch {
+          /* 숫자 입력칸은 선택 범위를 지원하지 않음 */
+        }
+        el.closest('.item-row')?.classList.add('active');
+      }
+    }
   },
 
   /** 저장된 데이터가 깨져 화면을 그릴 수 없을 때의 복구 화면 */
@@ -219,7 +295,7 @@ export const app = {
     };
     this.actions['recovery-export'] = () => settingsView.downloadBackup(this, exportJSON(this.state));
     this.actions['recovery-reset'] = () => {
-      if (!confirm('모든 데이터를 지우고 처음 상태로 돌릴까요?')) return;
+      if (!confirm(`모든 데이터를 지우고 처음 상태로 돌릴까요?${this.syncStatus?.state === 'on' ? '\n(공유 저장소의 데이터도 같이 지워집니다. 다른 기기에서 세는 중인 초안은 남습니다)' : ''}`)) return;
       this.state = defaultState();
       this.persist();
       this.render();
@@ -277,6 +353,7 @@ export const app = {
     });
 
     this.render();
+    this.startSync();
   },
 };
 

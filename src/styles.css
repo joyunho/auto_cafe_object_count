@@ -1038,3 +1038,48 @@ main[data-tab='count'] {
 .dense .group {
   margin-bottom: 10px;
 }
+
+/* ── 공유 상태 표시 (상단 바의 작은 알약 · 설정 탭 공유 카드) ── */
+.topbar .sync-pill {
+  font-size: 11px;
+  cursor: pointer;
+  margin-right: 6px;
+  white-space: nowrap;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.sync-pill.connecting::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 5px;
+  vertical-align: 1px;
+  animation: sync-pulse 1s ease-in-out infinite;
+}
+@keyframes sync-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-pill.connecting::before {
+    animation: none;
+  }
+}
+#sync-card textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+}
+#sync-card .sync-error {
+  color: var(--danger);
+  word-break: break-word;
+}

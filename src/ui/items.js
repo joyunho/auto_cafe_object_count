@@ -4,6 +4,9 @@ import { unitLabel } from '../logic/order.js';
 import { resetItems, uid } from '../store.js';
 import { BOOKS, bookOf } from '../data/books.js';
 
+/** 공유 중일 때 위험한 작업의 confirm 에 덧붙이는 안내 (settings.js 와 같은 문장) */
+const syncNote = (app) => (app?.syncStatus?.state === 'on' ? '\n(공유 저장소의 데이터도 같이 바뀝니다 — 다른 기기에도 반영)' : '');
+
 function slugify(name) {
   return (
     name
@@ -293,7 +296,7 @@ export const actions = {
     app.update((s) => moveGroup(s, el.dataset.id, 1));
   },
   'items-reset'(el, e, app) {
-    if (!confirm('품목과 그룹을 기본 시트 데이터로 되돌릴까요? 직접 수정한 품목 정보는 사라집니다.')) return;
+    if (!confirm(`품목과 그룹을 기본 시트 데이터로 되돌릴까요? 직접 수정한 품목 정보는 사라집니다.${syncNote(app)}`)) return;
     app.update((s) => Object.assign(s, resetItems(s)));
     app.toast('기본 품목으로 되돌렸습니다');
   },
