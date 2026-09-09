@@ -9,20 +9,27 @@ import { fileURLToPath } from 'node:url';
 import { parseSalesReport } from '../src/logic/pos.js';
 import { suggestParFromRate, seasonality } from '../src/logic/consumption.js';
 import { analyze, modelFrom, cupsOf } from '../src/logic/pos-model.js';
-import { RECIPES } from '../src/data/recipes.js';
 import { SEED_ITEMS } from '../src/data/items.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 기본: 추정값 층을 덧씌워 계산 (assumed 로 표시). `--no-estimates` 면 자료에 있는 값만.
 const useEstimates = !process.argv.includes('--no-estimates');
 
-// 레시피는 앱에 들어가는 src/data/recipes.js 를 쓴다 (앱과 스크립트가 같은 자료를 보게).
-// data/recipes.json 을 다시 만들었으면 scripts/build-recipes-module.mjs 로 이 모듈도 갱신해야 한다.
+// 레시피는 이 스크립트의 입력인 data/recipes.json 을 그대로 쓴다.
+// 앱(브라우저)은 같은 자료를 src/data/recipes.js 로 받으므로, 둘이 어긋나면 알려 준다.
 const recipesJson = path.join(root, 'data', 'recipes.json');
-if (fs.existsSync(recipesJson)) {
-  const fromFile = JSON.parse(fs.readFileSync(recipesJson, 'utf8')).recipes;
-  if (JSON.stringify(fromFile) !== JSON.stringify(RECIPES)) {
-    console.warn('경고: data/recipes.json 과 src/data/recipes.js 가 다릅니다 → node scripts/build-recipes-module.mjs 로 맞추세요 (지금은 src/data/recipes.js 로 계산합니다)');
+if (!fs.existsSync(recipesJson)) {
+  console.error(`${path.relative(root, recipesJson)} 가 없습니다 — 먼저 scripts/build-recipes.mjs 로 만드세요`);
+  process.exit(1);
+}
+const RECIPES = JSON.parse(fs.readFileSync(recipesJson, 'utf8')).recipes;
+const modulePath = path.join(root, 'src', 'data', 'recipes.js');
+if (!fs.existsSync(modulePath)) {
+  console.warn('경고: src/data/recipes.js 가 없어 앱(브라우저)에서는 소비량을 계산할 수 없습니다 → node scripts/build-recipes-module.mjs');
+} else {
+  const { RECIPES: inApp } = await import('../src/data/recipes.js');
+  if (JSON.stringify(inApp) !== JSON.stringify(RECIPES)) {
+    console.warn('경고: data/recipes.json 과 src/data/recipes.js 가 다릅니다 → node scripts/build-recipes-module.mjs 로 맞추세요 (이 스크립트는 data/recipes.json 으로 계산합니다)');
   }
 }
 
