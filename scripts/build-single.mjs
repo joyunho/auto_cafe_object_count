@@ -18,7 +18,7 @@ const result = await esbuild.build({
   minify: false,
   write: false,
   charset: 'utf8',
-  target: ['es2020'],
+  target: ['es2022'],
   define: { __SINGLE_FILE__: 'true' },
   logLevel: 'warning',
 });
@@ -32,6 +32,13 @@ const modelScript = fs.existsSync(modelPath)
   ? `<script>window.__CONSUMPTION_MODEL__ = ${JSON.stringify(JSON.parse(fs.readFileSync(modelPath, 'utf8'))).replace(/<\/script/gi, '<\\/script')};</script>\n`
   : '';
 if (modelScript) console.log('소비 모델 포함: data/consumption.json');
+// 레시피 표(data/recipes.json, 저장소에는 포함하지 않음)도 있으면 심는다 — 단일 파일에서는
+// src/data/recipes.js 를 실행 중에 찾을 수 없으므로 이 길로만 들어간다 (설정 탭 "포스 자료 넣기"에 필요)
+const recipesPath = path.join(root, 'data', 'recipes.json');
+const recipesScript = fs.existsSync(recipesPath)
+  ? `<script>window.__RECIPES__ = ${JSON.stringify(JSON.parse(fs.readFileSync(recipesPath, 'utf8')).recipes || []).replace(/<\/script/gi, '<\\/script')};</script>\n`
+  : '';
+if (recipesScript) console.log('레시피 표 포함: data/recipes.json');
 const iconHref = `data:image/svg+xml;base64,${Buffer.from(iconSvg).toString('base64')}`;
 
 const inner = `<title>씨앤비 발주 도우미</title>
@@ -41,7 +48,7 @@ ${css}
 </style>
 <div id="app"></div>
 <noscript>이 앱은 JavaScript가 필요합니다.</noscript>
-${modelScript}<script type="module">
+${modelScript}${recipesScript}<script type="module">
 ${js}
 </script>`;
 

@@ -8,3 +8,5 @@ docs/proposal/fonts/*.ttf
 /data/
 /docs/analysis/
 /docs/판매데이터-소비량-분석.pdf
+# 레시피 표도 가게 자료다 — 로컬에서 만들고(scripts/build-recipes-module.mjs), 배포는 비밀값 RECIPES_JSON 으로
+/src/data/recipes.js

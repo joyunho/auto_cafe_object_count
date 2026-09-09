@@ -53,6 +53,10 @@ export const app = {
   syncFailLogged: false,
   sdkRefreshHinted: false,
   stateSaved: true, // 마지막 persist 가 앱 상태를 디스크에 남겼는가 (false 면 엔진이 기준선을 쓰지 않는다)
+  // 설정 탭 "포스 자료 넣기"의 임시 상태 — 저장하지도 공유하지도 않는다 (적용을 눌러야 state.consumption 이 된다)
+  posText: '', // 붙여넣기 칸 내용 (다시 그려도 남게)
+  posPreview: null, // 읽어 들인 결과 { model, reports, months, baseMonths }
+  posBusy: false, // 파일(PDF)을 읽는 중
 
   /** 상태를 바꾸고 저장 + 전체 렌더 */
   update(fn) {

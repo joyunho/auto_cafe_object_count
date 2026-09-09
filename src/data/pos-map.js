@@ -43,7 +43,7 @@ export const PRODUCT_MAP = {
   '아포카토': { menu: '아포가토', variant: 'ICE' },
   // ── 옵션·호출 (재료 소비 없음) ──
   '연하게': null, 'Take out': null, '얼음컵': null, '빈컵': null,
-  '정식메뉴': { unknown: '유료 상품인데 무엇인지 확인 전' },
+  '정식메뉴': null, // 사용자 확인(2026-09): "신경 X" — 재료 계산에서 제외
   '덜 달게': null, '얼음없이': null, '얼음적게': null, '얼음많이': null, '휘핑없이': null,
   '뜨거운물': null, '물 적게': null, '물 많이': null,
   // ── 티 ──
@@ -120,60 +120,62 @@ export const IGNORED_GROUPS = ['빵', '디저트', '쇼케이스', '진동벨'];
 /** 옵션 처리 규칙 */
 export const MODIFIERS = {
   shot: { ingredient: '에스프레소샷', qtyPerShot: 1, unit: 'shot' },
-  hazelnut: { ingredient: '헤이즐넛시럽', qty: 1, unit: 'ea' }, // 옵션 건수만 집계 (건당 펌프 수·1펌프 ml·병 용량 확인 전)
+  // 사용자 확인(2026-09): "디카페인" 옵션 1건 = 2샷을 디카페인 원두로 (샷 수는 그대로, 그중 2샷이 디카페인)
+  decaf: { shots: 2 },
+  hazelnut: { ingredient: '헤이즐넛시럽', qty: 1, unit: 'ea' }, // 옵션 건수만 집계 (1펌프 5g은 확인됨 · 건당 펌프 수는 아직 → 추정값 층에서 1펌프로 봄)
 };
 
 export const INGREDIENT_MAP = {
   // 커피·우유
-  '에스프레소샷': { item: 'beans', perShotG: null, perPackage: null, unit: 'shot', note: '1샷 원두 g·1봉 무게 확인 전 — 샷 수만 집계' },
+  '에스프레소샷': { item: 'beans', perShotG: 20, perPackage: 1000, unit: 'g', note: '사용자 확인(2026-09): 에스프레소 1샷 = 원두 20g · 1봉 1,000g' },
   '우유': { item: 'milk', perPackage: 1000, unit: 'ml', note: '매일우유 1L' },
   '스팀우유': { item: 'milk', perPackage: 1000, unit: 'ml', note: '매일우유 1L' },
   '크림우유': { item: null, note: '크림우유(우유+휘핑) 1잔의 우유 ml 확인 전 — 우유 소비에 미포함' },
-  '우유거품': { item: null, note: '거품용 우유 ml 확인 전 — 우유 소비에 미포함' },
+  '우유거품': { item: 'milk', perPackage: 1000, unit: 'ml', perServing: 30, note: '사용자 확인(2026-09): 거품에 쓰는 우유 1잔 30ml' },
   '연유': { item: 'condensed-milk', perPackage: 500, unit: 'g', note: '매일 연유 500g' },
   // 시럽·소스 — 레시피는 g, 병은 ml 표기라 병당 g(또는 1펌프 ml)을 알아야 낱개로 바꿀 수 있음
-  '바닐라시럽': { item: 'vanilla-syrup', perPackage: null, unit: 'g', note: '모닌 1L 병 = 몇 g인지 확인 전' },
+  '바닐라시럽': { item: 'vanilla-syrup', perPackage: null, unit: 'g', pumpG: 7, note: '사용자 확인(2026-09): 1펌프 7g · 1L 병이 몇 g인지는 아직 (레시피가 g이라 병 무게가 있어야 병 수로 바뀜)' },
   '초코소스': { item: 'choco-sauce', perPackage: 2600, unit: 'g', note: '다빈치 2L(2.6kg)' },
-  '카라멜소스': { item: 'caramel-sauce', perPackage: null, unit: 'g', note: '토라니 1.89L 병 = 몇 g인지 확인 전' },
-  '카라멜시럽': { item: 'caramel-syrup', perPackage: null, unit: 'g', note: '토라니 750ml 병 = 몇 g인지 확인 전' },
-  '설탕시럽': { item: 'cafe-syrup', perPackage: null, unit: 'g', note: '카페시럽 1.5L 병 = 몇 g인지 확인 전' },
-  '헤이즐넛시럽': { item: 'hazelnut-syrup', perPackage: null, unit: 'ea', note: '옵션 건당 펌프 수·1펌프 ml·병 용량 확인 전 — 옵션 건수만' },
-  '초코드리즐': { item: null, note: '아포가토 드리즐이 초코소스인지 카라멜소스인지·양 확인 전' },
+  '카라멜소스': { item: 'caramel-sauce', perPackage: null, unit: 'g', pumpG: 40, note: '사용자 확인(2026-09): 1펌프 40g · 1.89L 병이 몇 g인지는 아직' },
+  '카라멜시럽': { item: 'caramel-syrup', perPackage: null, unit: 'g', pumpG: 10, note: '사용자 확인(2026-09): 1펌프 10g · 750ml 병이 몇 g인지는 아직' },
+  '설탕시럽': { item: 'cafe-syrup', perPackage: null, unit: 'g', pumpG: 5, note: '사용자 확인(2026-09): 1펌프 5g · 1.5L 병이 몇 g인지는 아직' },
+  '헤이즐넛시럽': { item: 'hazelnut-syrup', perPackage: null, unit: 'g', pumpG: 5, note: '사용자 확인(2026-09): 1펌프 5g · 옵션 1건에 몇 펌프인지·병 용량은 아직' },
+  '초코드리즐': { item: 'choco-sauce', perPackage: 2600, unit: 'g', perServing: 7.5, note: '사용자 확인(2026-09): 아포가토 드리즐 = 초코소스 1잔 5~10g → 중간값 7.5g' },
   // 청·베이스
   '유자청': { item: 'yuja-cheong', perPackage: 2200, unit: 'g', note: '제주유자차 2.2kg' },
   '청귤청': { item: 'cheonggyul-cheong', perPackage: 2200, unit: 'g', note: '제주청귤청 2.2kg' },
-  '딸기청': { item: 'strawberry-cheong', perPackage: null, unit: 'g', note: '1단지 무게 확인 전' },
-  '블루베리청': { item: 'blueberry-cheong', perPackage: null, unit: 'g', note: '1단지 무게 확인 전' },
+  '딸기청': { item: 'strawberry-cheong', perPackage: 1000, unit: 'g', note: '사용자 확인(2026-09): 1단지 1,000g' },
+  '블루베리청': { item: 'blueberry-cheong', perPackage: 1000, unit: 'g', note: '사용자 확인(2026-09): 1단지 1,000g' },
   // 레몬: 사용자 확인 — 시럽이 아니라 과일 레몬(품목 lemon-syrup = "레몬(과일)"). 레몬청은 과일 레몬으로 만드는 것으로 봄.
   '레몬청': { item: 'lemon-syrup', perPackage: null, unit: 'g', note: '사용자 확인: 레몬은 과일 — 레몬청은 과일 레몬으로 만드는 것으로 봄. 레몬 1개에서 청 몇 g 나오는지 확인 전' },
   '자몽청': { item: 'grapefruit', perPackage: 2000, unit: 'g', note: '사용자 확인: 시럽 — 용량은 구매표의 쏘스윗업 자몽 시럽 2kg (◇확인 표시)' },
   '청포도청': { item: 'green-grape', perPackage: 2000, unit: 'g', note: '사용자 확인: 시럽 — 용량은 구매표의 쏘스윗업 청포도 시럽 2kg (◇확인 표시)' },
   '아이스티': { item: 'ice-tea', perPackage: 2000, unit: 'g', note: '복숭아 아이스티 시럽 2kg (1box=6)' },
   '키위시럽': { item: 'kiwi-sauce', perPackage: 2000, unit: 'g', note: '포모나 키위 스무디 2kg' },
-  '배도라지청': { item: 'pear-bellflower-tea', perPackage: null, unit: 'g', note: '470g 병(구매표에 ◇확인 표시)·1박스 병 수 확인 전' },
-  '그린티': { item: 'boseong-green-tea', perPackage: null, unit: 'g', note: '보성녹차 베이스 1L 병 = 몇 g인지 확인 전' },
+  '배도라지청': { item: 'pear-bellflower-tea', perPackage: 470, unit: 'g', note: '사용자 확인(2026-09): 1병 470g (1박스에 몇 병인지는 아직 → 병 단위로 셈)' },
+  '그린티': { item: 'boseong-green-tea', perPackage: null, unit: 'g', pumpG: 15, note: '사용자 확인(2026-09): 15g(펌프당으로 읽음) · 1L 병이 몇 g인지는 아직' },
   '얼그레이': { item: 'earl-grey', perPackage: 1200, unit: 'g', note: '얼그레이 밀크티 베이스 1.2kg' },
-  '디카페인 콜드브루': { item: 'decaf-coldbrew', perPackage: null, unit: 'g', note: '1봉 무게 확인 전' },
-  '콜드브루': { item: null, note: '바닐라 크림 콜드브루의 콜드브루가 디카페인 제품인지 확인 전' },
+  '디카페인 콜드브루': { item: 'decaf-coldbrew', perPackage: 1000, unit: 'g', note: '사용자 확인(2026-09): 1봉 1,000ml (≈1,000g)' },
+  '콜드브루': { item: 'decaf-coldbrew', perPackage: 1000, unit: 'g', note: '사용자 확인(2026-09): 바닐라 크림 콜드브루의 콜드브루도 같은 디카페인 콜드브루' },
   '미숫가루': { item: 'misugaru', perPackage: null, unit: 'g', note: '1봉 무게 확인 전' },
   '미숫가루 베이스': { item: null, note: '옛미 베이스 1배합에서 몇 잔 나오는지·시럽 종류 확인 전 — 원재료로 나누지 않음' },
   '시나몬가루': { item: 'cinnamon-powder', perPackage: null, unit: 'serving', note: '1잔 사용량(g) 확인 전 — 잔 수만 집계 (1봉 500g)' },
   // 티백 — 1잔에 몇 봉인지 레시피에 없어 잔 수만 집계 (포장: 애플티 25T, 캐모마일 20T, 루이보스 30T, 파인우롱 20T, 작설녹차 30T)
-  '애플유자티': { item: 'apple-tea', perPackage: null, unit: 'serving', note: '1잔 티백 봉 수 확인 전 (아일레스 애플티 25T)' },
-  '티백 캐모마일': { item: 'chamomile', perPackage: null, unit: 'serving', note: '1잔 티백 봉 수 확인 전 (20T)' },
-  '티백 루이보스': { item: 'rooibos', perPackage: null, unit: 'serving', note: '1잔 티백 봉 수 확인 전 (30T)' },
-  '티백 파인우롱': { item: 'pine-oolong', perPackage: null, unit: 'serving', note: '1잔 티백 봉 수 확인 전 (20T)' },
-  '티백 작설녹차': { item: 'jakseol-green-tea', perPackage: null, unit: 'serving', note: '1잔 티백 봉 수 확인 전 (30T)' },
+  '애플유자티': { item: 'apple-tea', perPackage: 25, unit: 'bag', perServing: 1, note: '사용자 확인(2026-09): HOT·ICE 모두 1잔 1봉 (아일레스 애플티 25T)' },
+  '티백 캐모마일': { item: 'chamomile', perPackage: 20, unit: 'bag', perServing: 1, note: '사용자 확인(2026-09): HOT·ICE 모두 1잔 1봉 (20T)' },
+  '티백 루이보스': { item: 'rooibos', perPackage: 30, unit: 'bag', perServing: 1, note: '사용자 확인(2026-09): HOT·ICE 모두 1잔 1봉 (30T)' },
+  '티백 파인우롱': { item: 'pine-oolong', perPackage: 20, unit: 'bag', perServing: 1, note: '사용자 확인(2026-09): HOT·ICE 모두 1잔 1봉 (20T)' },
+  '티백 작설녹차': { item: 'jakseol-green-tea', perPackage: 30, unit: 'bag', perServing: 1, note: '사용자 확인(2026-09): HOT·ICE 모두 1잔 1봉 (30T)' },
   // 가니쉬·원물 — 1포장 개수·무게 확인 전
-  '오렌지 가니쉬': { item: 'orange-garnish', perPackage: null, unit: 'serving', note: '1잔 조각 수·1포장 조각 수 확인 전 — 잔 수만' },
-  '가니쉬': { item: null, note: '레시피에 종류 없이 "가니쉬"로만 적힘 — 어떤 가니쉬인지 확인 전' },
-  '레몬 가니쉬': { item: null, note: '사용자 확인: 과일 레몬(레몬(과일) 품목) — 생레몬 1개에서 몇 조각(몇 잔) 나오는지 확인 전이라 확정 연결표에서는 비움 (추정값 층에서 레몬 개수로 환산)' },
-  '대추 가니쉬': { item: null, note: '1잔에 대추 몇 개인지 확인 전 (대추차의 "대추 5개"만 집계)' },
+  '오렌지 가니쉬': { item: 'orange-garnish', perPackage: 100, unit: 'g', note: '사용자 확인(2026-09): 1잔 1조각 · 1봉 100g (1조각이 몇 g인지는 아직 → 추정값 층)' },
+  '가니쉬': { item: 'lemon-syrup', perPackage: 100, unit: 'g', note: '사용자 확인(2026-09): 종류 미표기 가니쉬 = 레몬' },
+  '레몬 가니쉬': { item: 'lemon-syrup', perPackage: 100, unit: 'g', note: '사용자 확인(2026-09): 건조레몬 1봉 100g (1조각이 몇 g인지는 아직 → 추정값 층)' },
+  '대추 가니쉬': { item: 'jujube', perPackage: null, unit: 'ea', perServing: 4, note: '사용자 확인(2026-09): 배도라지차·생강차 1잔 대추 4조각 (대추 1개를 여러 조각으로 잘라 씀 → 조각 수)' },
   '대추': { item: 'jujube', perPackage: null, unit: 'ea', note: '1포장 개수 확인 전' },
   '잣': { item: 'pine-nut', perPackage: null, unit: 'ea', note: '1포장 개수(무게) 확인 전' },
   '잣(미표기)': { item: null, note: '배도라지차 1잔 잣 개수 확인 전 (대추차의 "잣 6개"만 집계)' },
   '아이스크림': { item: 'ice-cream', perPackage: null, unit: 'serving', note: '1잔 스쿱 수·1통 스쿱 수 확인 전 — 잔 수만' },
-  '탄산수': { item: 'sparkling-water', perPackage: null, unit: 'ml', note: '병 용량·발주 단위 확인 전' },
+  '탄산수': { item: 'sparkling-water', perPackage: 190, unit: 'ml', boxSize: 30, note: '사용자 확인(2026-09): 1병 190ml · 1박스 30병 (에이드 1잔 = 190ml = 딱 1병). 발주 단위(병/박스)는 아직' },
   '토마토': { item: 'tomato', perPackage: null, unit: 'g', note: '1박스 무게 확인 전' },
   '키위': { item: 'kiwi', perPackage: null, unit: 'g', note: '1박스 무게(또는 개수와 1개 g) 확인 전' },
   // 씨앤비 시트에 없는 재료 (다른 거래처)

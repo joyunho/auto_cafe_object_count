@@ -56,4 +56,5 @@ for (const r of data.recipes) {
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'recipes.json'), JSON.stringify({ measures: data.measures, recipes: out, supplies: data.supplies }, null, 1));
 console.log(`data/recipes.json: ${out.length} recipes, ${data.supplies.length} supplies`);
+await import('./build-recipes-module.mjs'); // 브라우저용 src/data/recipes.js 도 같이 갱신 (둘이 어긋나지 않게)
 for (const r of out) console.log(`  ${r.menu} ${r.variant}: ${r.ingredients.map((i) => `${i.name} ${Math.round(i.qty * 100) / 100}${i.unit}`).join(', ')}`);

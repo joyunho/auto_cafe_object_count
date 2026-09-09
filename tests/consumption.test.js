@@ -70,7 +70,7 @@ test('findRecipe: 정확히 같은 메뉴·변형만 (다른 변형으로 대체
 });
 
 test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시 그룹, 미연결', () => {
-  const { byIngredient, unmapped, ignored, decafCups } = consumptionByIngredient(sales, recipes, maps);
+  const { byIngredient, unmapped, ignored, decafShots } = consumptionByIngredient(sales, recipes, maps);
   assert.equal(byIngredient['바닐라시럽'].months['2026-01'], 120 * 30);
   assert.equal(byIngredient['바닐라시럽'].months['2026-02'], 50 * 30);
   assert.equal(byIngredient['우유'].months['2026-01'], 100 * 150);
@@ -82,7 +82,7 @@ test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시
   assert.equal(byIngredient['@item:noa-a'].months['2026-02'], 4);
   assert.equal(byIngredient['@item:noa-b'].months['2026-02'], 4);
   assert.equal(byIngredient['에스프레소샷'].months['2026-02'], 50 + 10);
-  assert.equal(decafCups['2026-01'], 30);
+  assert.equal(decafShots['2026-01'], 30);
   assert.deepEqual(unmapped.map((u) => u.product).sort(), ['노아주스 x', '대추차 ice', '모르는상품', '수상한메뉴']);
   assert.equal(unmapped.find((u) => u.product === '수상한메뉴').reason, '레시피 없음: 없는메뉴 ICE');
   assert.equal(unmapped.find((u) => u.product === '대추차 ice').reason, '레시피 없음: 대추차 ICE');
@@ -95,8 +95,8 @@ test('consumptionByIngredient: 판매량 × 레시피, 옵션, 병음료, 무시
 });
 
 test('consumptionByItem: 포장 단위 환산, 밀도, 원두 분리, 일평균', () => {
-  const { byIngredient, decafCups } = consumptionByIngredient(sales, recipes, maps);
-  const { byItem } = consumptionByItem(sales.months, byIngredient, decafCups, maps, items);
+  const { byIngredient, decafShots } = consumptionByIngredient(sales, recipes, maps);
+  const { byItem } = consumptionByItem(sales.months, byIngredient, decafShots, maps, items);
   // 바닐라시럽: 3600g / 1.3 = 2769.2ml → 2.77병 (1월)
   assert.ok(Math.abs(byItem['vanilla-syrup'].monthly['2026-01'] - 3600 / 1.3 / 1000) < 1e-9);
   assert.equal(byItem['vanilla-syrup'].assumed, true);
@@ -124,8 +124,8 @@ test('consumptionByItem: 포장 단위 환산, 밀도, 원두 분리, 일평균'
 
 test('consumptionByItem: 1샷 원두 g을 모르면 샷 수로 집계', () => {
   const m2 = { ...maps, INGREDIENT_MAP: { ...maps.INGREDIENT_MAP, '에스프레소샷': { item: 'beans', perShotG: null, perPackage: null, unit: 'shot' } } };
-  const { byIngredient, decafCups } = consumptionByIngredient(sales, recipes, m2);
-  const { byItem } = consumptionByItem(sales.months, byIngredient, decafCups, m2, items);
+  const { byIngredient, decafShots } = consumptionByIngredient(sales, recipes, m2);
+  const { byItem } = consumptionByItem(sales.months, byIngredient, decafShots, m2, items);
   assert.equal(byItem['beans'].unit, 'shot');
   assert.equal(byItem['beans'].raw['2026-01'], 130);
   assert.equal(byItem['beans'].decafRaw['2026-01'], 30);
@@ -148,7 +148,7 @@ test('추정값 층: 덧씌운 항목은 assumed, 1잔당 양(perServing)으로 
   const items2 = [...items, { id: 'cinnamon', name: '시나몬' }, { id: 'yuja', name: '유자청' }];
   // 추정 없이: 시나몬은 잔 수만, 유자차는 레시피 없음
   let r = consumptionByIngredient(sales2, recipes2, maps2);
-  let b = consumptionByItem(sales2.months, r.byIngredient, r.decafCups, maps2, items2).byItem;
+  let b = consumptionByItem(sales2.months, r.byIngredient, r.decafShots, maps2, items2).byItem;
   assert.equal(b.cinnamon.unit, 'serving');
   assert.equal(b.cinnamon.raw['2026-01'], 10);
   assert.equal(r.unmapped.find((u) => u.product === 'hot유자차').reason, '레시피 없음: 유자차 HOT');
@@ -162,7 +162,7 @@ test('추정값 층: 덧씌운 항목은 assumed, 1잔당 양(perServing)으로 
   const merged = applyEstimates(maps2, recipes2, est);
   assert.equal(merged.recipes.length, recipes2.length + 1);
   r = consumptionByIngredient(sales2, merged.recipes, merged.maps);
-  b = consumptionByItem(sales2.months, r.byIngredient, r.decafCups, merged.maps, items2).byItem;
+  b = consumptionByItem(sales2.months, r.byIngredient, r.decafShots, merged.maps, items2).byItem;
   assert.equal(b.cinnamon.unit, 'g');
   assert.ok(Math.abs(b.cinnamon.raw['2026-01'] - 3) < 1e-9); // 10잔 × 0.3g
   assert.equal(b.cinnamon.assumed, true);

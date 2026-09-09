@@ -1,39 +1,41 @@
 // POS 월별 매출 보고서(텍스트) × 레시피 → 재고 품목별 소비량 분석
 //   node scripts/pos-analysis.mjs [data/pos]   → data/consumption.json, data/analysis.json + 요약 출력
+//
+// 계산 본체는 src/logic/pos-model.js 에 있다 — 앱(설정 탭 "포스 자료 넣기")이 브라우저에서 부르는 것과
+// 같은 함수다. 여기서는 파일을 읽고 보고서용 표(analysis.json)를 덧붙여 쓰기만 한다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseSalesReport, aggregateSales } from '../src/logic/pos.js';
-import { consumptionByIngredient, consumptionByItem, suggestParFromRate, seasonality } from '../src/logic/consumption.js';
-const RECIPES = JSON.parse(fs.readFileSync(path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'data', 'recipes.json'), 'utf8')).recipes;
-import * as baseMaps from '../src/data/pos-map.js';
-import { applyEstimates } from '../src/data/pos-estimates.js';
+import { parseSalesReport } from '../src/logic/pos.js';
+import { suggestParFromRate, seasonality } from '../src/logic/consumption.js';
+import { analyze, modelFrom, cupsOf } from '../src/logic/pos-model.js';
+import { RECIPES } from '../src/data/recipes.js';
 import { SEED_ITEMS } from '../src/data/items.js';
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 기본: 추정값 층을 덧씌워 계산 (assumed 로 표시). `--no-estimates` 면 자료에 있는 값만.
 const useEstimates = !process.argv.includes('--no-estimates');
-const { maps, recipes: RECIPES_USED } = useEstimates ? applyEstimates(baseMaps, RECIPES) : { maps: baseMaps, recipes: RECIPES };
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// 레시피는 앱에 들어가는 src/data/recipes.js 를 쓴다 (앱과 스크립트가 같은 자료를 보게).
+// data/recipes.json 을 다시 만들었으면 scripts/build-recipes-module.mjs 로 이 모듈도 갱신해야 한다.
+const recipesJson = path.join(root, 'data', 'recipes.json');
+if (fs.existsSync(recipesJson)) {
+  const fromFile = JSON.parse(fs.readFileSync(recipesJson, 'utf8')).recipes;
+  if (JSON.stringify(fromFile) !== JSON.stringify(RECIPES)) {
+    console.warn('경고: data/recipes.json 과 src/data/recipes.js 가 다릅니다 → node scripts/build-recipes-module.mjs 로 맞추세요 (지금은 src/data/recipes.js 로 계산합니다)');
+  }
+}
+
 const dir = path.resolve(process.argv.slice(2).find((a) => !a.startsWith('--')) || path.join(root, 'data', 'pos'));
 const files = fs.readdirSync(dir).filter((f) => /월.*\.txt$/.test(f));
 const reports = files.map((f) => parseSalesReport(fs.readFileSync(path.join(dir, f), 'utf8')));
 for (const [i, r] of reports.entries()) if (r.unassigned) console.warn(`경고: ${files[i]} 그룹 미배정 ${r.unassigned}줄`);
-const sales = aggregateSales(reports);
-const { byIngredient, unmapped, ignored, decafCups } = consumptionByIngredient(sales, RECIPES_USED, maps);
-const { byItem, notes } = consumptionByItem(sales.months, byIngredient, decafCups, maps, SEED_ITEMS);
 
-// 음료 판매 잔 수 (재료 소비 대상 그룹만)
-const drinkGroups = ['커피', '티', '에이드', '라떼', '주스/병음료'];
-const cupsByMonth = Object.fromEntries(sales.months.map((m) => [m, 0]));
-const cupsByGroup = {};
-for (const [name, p] of Object.entries(sales.products)) {
-  if (!drinkGroups.includes(p.group)) continue;
-  const map = maps.PRODUCT_MAP[name];
-  if (!map || map.modifier) continue; // 옵션 제외
-  cupsByGroup[p.group] = (cupsByGroup[p.group] || 0) + p.total;
-  for (const [m, q] of Object.entries(p.byMonth)) cupsByMonth[m] += q;
-}
+const a = analyze(reports, { estimates: useEstimates, recipes: RECIPES, items: SEED_ITEMS });
+const { sales, byIngredient, byItem, unmapped, ignored, maps, notes } = a;
+
+// 음료 판매 잔 수 (재료 소비 대상 그룹만) — 앱 미리보기와 같은 함수
+const { byMonth: cupsByMonth, byGroup: cupsByGroup } = cupsOf(a);
 // 아이스/핫: POS 상품명(ice…/hot…)으로 판정, 이름에 없으면 레시피 변형으로 (대추차 ice처럼 레시피는 HOT만 있어도 판매는 ICE)
 const served = (name, map) => (/^ice|\sice$/i.test(name) ? 'ice' : /^hot|\shot$/i.test(name) ? 'hot' : map.variant === 'ICE' ? 'ice' : 'hot');
 const iceHot = Object.fromEntries(sales.months.map((m) => [m, { ice: 0, hot: 0 }]));
@@ -76,17 +78,8 @@ const out = {
 fs.mkdirSync(path.join(root, 'data'), { recursive: true });
 fs.writeFileSync(path.join(root, 'data', 'analysis.json'), JSON.stringify(out, null, 1));
 
-// 앱용 소비 모델: 품목별 월 일평균(포장 단위) + 계절 지수
-const model = {
-  version: 1,
-  source: `POS 그룹별 매출분석 ${sales.months[0]} ~ ${sales.months.at(-1)} × 레시피 2026.08${useEstimates ? ' (포장 크기 일부 추정)' : ''}`,
-  months: sales.months,
-  items: Object.fromEntries(
-    rows
-      .filter((r) => r.perPackage && itemIndex[r.itemId])
-      .map((r) => [r.itemId, { perDay: Object.fromEntries(sales.months.map((m) => [m, Math.round((r.perDay[m] || 0) * 1000) / 1000])), avgPerDay: Math.round(r.avgPerDay * 1000) / 1000, unit: r.unit, assumed: r.assumed, estimated: r.assumed }]),
-  ),
-};
+// 앱용 소비 모델: 품목별 월 일평균(포장 단위) — 앱이 브라우저에서 만드는 것과 같은 함수(modelFrom)로
+const model = modelFrom(a);
 fs.writeFileSync(path.join(root, 'data', 'consumption.json'), JSON.stringify(model, null, 1));
 
 // 요약 출력

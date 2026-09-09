@@ -40,6 +40,21 @@ jobs:
             require("fs").writeFileSync("src/data/share-config.js", "// 배포 시 GitHub Actions 가 SHARE_CONFIG_JSON 으로 생성한 파일\nexport const SHARE_CONFIG = " + JSON.stringify(out) + ";\n");
             console.log("공유 저장소 설정 주입: project " + fb.projectId + ", storeCode " + out.storeCode.slice(0, 4) + "…");
           '
+      # 레시피 표도 저장소에 올리지 않는다 → 비밀값 RECIPES_JSON (data/recipes.json 내용 그대로)로 배포 시점에 넣는다.
+      # 없으면 "포스 자료 넣기"가 레시피 없음으로 안내하고, 나머지 기능은 그대로 동작한다.
+      - name: Inject recipes
+        env:
+          RECIPES_JSON: ${{ secrets.RECIPES_JSON }}
+        run: |
+          if [ -z "$RECIPES_JSON" ]; then echo "RECIPES_JSON 없음 → 레시피 없이 배포"; exit 0; fi
+          node -e '
+            const j = JSON.parse(process.env.RECIPES_JSON);
+            const recipes = j.recipes || j;
+            if (!Array.isArray(recipes) || !recipes.length) throw new Error("recipes 배열이 비었습니다");
+            const out = "// 배포 시 GitHub Actions 가 RECIPES_JSON 으로 생성한 파일\nexport const MEASURES = " + JSON.stringify(j.measures || {}) + ";\nexport const RECIPES = " + JSON.stringify(recipes) + ";\n";
+            require("fs").writeFileSync("src/data/recipes.js", out);
+            console.log("레시피 " + recipes.length + "개 주입");
+          '
       - name: Collect static files
         run: |
           mkdir -p dist

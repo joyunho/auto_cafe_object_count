@@ -38,7 +38,9 @@ export function consumptionByIngredient(sales, recipes, maps) {
   const by = {}; // name -> { unit, months: {m: qty} }
   const unmapped = [];
   const ignored = [];
-  const decafCups = {}; // month -> 디카페인 옵션 잔 수 (원두 분리용)
+  // month -> 디카페인 원두로 뽑은 샷 수 (원두 소비 중 디카페인 몫을 갈라내는 데 쓴다)
+  const decafShots = {};
+  const DECAF_SHOTS = MODIFIERS.decaf?.shots || 1; // 디카페인 1건에 뽑는 샷 수 (사용자 확인: 2샷)
   const add = (name, unit, month, qty) => {
     const e = (by[name] ||= { unit, months: {} });
     e.months[month] = (e.months[month] || 0) + qty;
@@ -72,12 +74,16 @@ export function consumptionByIngredient(sales, recipes, maps) {
       if (map.espresso) {
         // 에스프레소 단품(싱글 1샷·더블 2샷): 잔이자 샷
         add('에스프레소샷', 'shot', month, qty * map.espresso);
-        if (map.decaf) decafCups[month] = (decafCups[month] || 0) + qty * map.espresso;
+        if (map.decaf) decafShots[month] = (decafShots[month] || 0) + qty * map.espresso;
         continue;
       }
       if (map.modifier) {
         const mod = MODIFIERS[map.modifier];
-        if (map.modifier === 'decaf') decafCups[month] = (decafCups[month] || 0) + qty;
+        if (map.modifier === 'decaf') {
+          // 디카페인 옵션: 붙어 있는 음료가 이미 1샷을 셌으므로 모자란 샷만 더 얹고, 그 잔의 샷 전부를 디카페인으로 본다
+          if (DECAF_SHOTS > 1) add('에스프레소샷', 'shot', month, qty * (DECAF_SHOTS - 1));
+          decafShots[month] = (decafShots[month] || 0) + qty * DECAF_SHOTS;
+        }
         else if (map.modifier === 'shot') add('에스프레소샷', 'shot', month, qty * (map.shots || 1));
         else if (mod) add(mod.ingredient, mod.unit, month, qty * mod.qty);
         continue;
@@ -110,16 +116,24 @@ export function consumptionByIngredient(sales, recipes, maps) {
         add(ing.name, ing.unit, month, qty * ing.qty);
         if (recipe.assumed) by[ing.name].assumed = true; // 추정 레시피에서 온 양
       }
-      if (map.decaf) decafCups[month] = (decafCups[month] || 0) + qty;
+      if (map.decaf) {
+        // 디카페인 메뉴(예: ice디카페인아메리카노): 레시피 샷 수가 디카페인 기준보다 적으면 그만큼 더 얹는다
+        const base = recipe?.ingredients.find((i) => i.name === '에스프레소샷')?.qty || 0;
+        if (DECAF_SHOTS > base) add('에스프레소샷', 'shot', month, qty * (DECAF_SHOTS - base));
+        decafShots[month] = (decafShots[month] || 0) + qty * Math.max(base, DECAF_SHOTS);
+      }
     }
   }
-  return { byIngredient: by, unmapped, ignored, decafCups };
+  return { byIngredient: by, unmapped, ignored, decafShots };
 }
 
 /**
  * 재료 소비량 → 재고 품목 단위(병·단지·박스…)로 환산
+ * @param {object} [opts] { daysOf } — 'YYYY-MM' → 그 달의 소비를 나눌 날 수 (기본: 그 달의 일수).
+ *   한 달 중 일부 기간만 담은 보고서를 넣을 때 그 기간의 날 수를 주면 일평균이 그 기간 기준으로 나온다.
  */
-export function consumptionByItem(months, byIngredient, decafCups, maps, items) {
+export function consumptionByItem(months, byIngredient, decafShots, maps, items, opts = {}) {
+  const daysOf = opts.daysOf || daysInMonth;
   const { INGREDIENT_MAP } = maps;
   const itemIndex = Object.fromEntries(items.map((it) => [it.id, it]));
   const out = {}; // itemId -> record
@@ -172,7 +186,7 @@ export function consumptionByItem(months, byIngredient, decafCups, maps, items) 
       if (map.assumed) r.assumed = true;
       r.decafRaw ||= {};
       for (const [m, shots] of Object.entries(e.months)) {
-        const decaf = Math.min(shots, decafCups[m] || 0);
+        const decaf = Math.min(shots, decafShots[m] || 0);
         r.raw[m] = (r.raw[m] || 0) + shots * (gPerShot || 1);
         r.decafRaw[m] = (r.decafRaw[m] || 0) + decaf * (gPerShot || 1);
       }
@@ -206,7 +220,7 @@ export function consumptionByItem(months, byIngredient, decafCups, maps, items) 
     for (const m of months) {
       const raw = r.raw[m] || 0;
       if (r.perPackage) r.monthly[m] = raw / r.perPackage;
-      const days = daysInMonth(m);
+      const days = daysOf(m) || daysInMonth(m);
       const perDay = r.perPackage ? raw / r.perPackage / days : raw / days;
       r.perDay[m] = perDay;
       if (raw > 0) {

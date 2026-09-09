@@ -1083,3 +1083,34 @@ main[data-tab='count'] {
   color: var(--danger);
   word-break: break-word;
 }
+
+/* 포스 자료 넣기: 미리보기 */
+.pos-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.pos-preview h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.pos-preview ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.pos-preview li + li {
+  margin-top: 8px;
+}
+
+.pos-more {
+  margin-top: 12px;
+}
+
+.pos-more summary {
+  cursor: pointer;
+}

@@ -7,47 +7,33 @@
 // basis: 무엇을 근거로 한 추정인지 (보고서 비고에 표시)
 
 const DENSITY_SYRUP = 1.3; // 시럽·소스 g/ml 추정
-// 레몬(과일, 품목 lemon-syrup): 레몬청과 레몬 가니쉬가 같은 품목으로 모이므로 두 추정의 단위·1개당 양을 맞춘다
-//   (같은 품목에 g와 조각이 섞이면 합산이 틀어진다). 1개 ≈ 레몬청 100g, 1개 = 8조각 → 1조각 = 12.5g 상당.
-const LEMON_G = 100; // 레몬 1개 ≈ 레몬청 100g
-const LEMON_SLICES = 8; // 생레몬 1개 = 8조각
+// 가니쉬(건조 슬라이스): 1봉 100g 은 확인됨(2026-09). 1조각 무게만 모르므로 여기서 추정한다.
+//   레몬 품목(lemon-syrup)에는 레몬청(생레몬)과 레몬 가니쉬(건조레몬)가 함께 모인다 — 둘 다 100g 단위라 합계는 "100g 몇 개"로 읽는다.
+const SLICE_G = 3; // 건조 오렌지·레몬 1조각 ≈ 3g (100g 봉지 약 33조각)
+const LEMON_G = 100; // 레몬청용 생레몬 1개 ≈ 청 100g
 const est = (o, basis) => ({ ...o, assumed: true, basis, note: `추정: ${basis}` });
 
 export const ESTIMATES = {
   INGREDIENT_MAP: {
-    '에스프레소샷': est({ item: 'beans', perShotG: 18, perPackage: 1000, unit: 'g' }, '1샷 원두 18g·1봉 1kg (업계 일반값)'),
     '바닐라시럽': est({ item: 'vanilla-syrup', perPackage: 1000 * DENSITY_SYRUP, unit: 'g' }, '1L 병 × 밀도 1.3'),
     '카라멜소스': est({ item: 'caramel-sauce', perPackage: 1890 * DENSITY_SYRUP, unit: 'g' }, '1.89L 병 × 밀도 1.3'),
     '카라멜시럽': est({ item: 'caramel-syrup', perPackage: 750 * DENSITY_SYRUP, unit: 'g' }, '750ml 병 × 밀도 1.3'),
     '설탕시럽': est({ item: 'cafe-syrup', perPackage: 1500 * DENSITY_SYRUP, unit: 'g' }, '1.5L 병 × 밀도 1.3'),
     '그린티': est({ item: 'boseong-green-tea', perPackage: 1000 * DENSITY_SYRUP, unit: 'g' }, '1L 병 × 밀도 1.3'),
-    '헤이즐넛시럽': est({ item: 'hazelnut-syrup', perPackage: 1000 * DENSITY_SYRUP, unit: 'g' }, '1L 병 × 밀도 1.3, 옵션 1건 = 1펌프 15g'),
+    '헤이즐넛시럽': est({ item: 'hazelnut-syrup', perPackage: 1000 * DENSITY_SYRUP, unit: 'g' }, '1L 병 × 밀도 1.3 (적어 주신 병 용량 "1750ml"이 750ml인지 1L인지 불확실)'),
     '크림우유': est({ item: 'milk', perPackage: 1000, unit: 'ml', density: 1.03, milkShare: 0.6 }, '우유 3 : 휘핑 2 비율의 우유 60%, 밀도 1.03'),
-    '우유거품': est({ item: 'milk', perPackage: 1000, unit: 'ml', perServing: 30 }, '거품용 우유 1잔 30ml'),
-    '딸기청': est({ item: 'strawberry-cheong', perPackage: 2000, unit: 'g' }, '같은 회사 청 2kg 규격'),
-    '블루베리청': est({ item: 'blueberry-cheong', perPackage: 2000, unit: 'g' }, '같은 회사 청 2kg 규격'),
-    '배도라지청': est({ item: 'pear-bellflower-tea', perPackage: 470, unit: 'g' }, '구매표 470g 병 (1박스 병 수는 모름 → 병 단위)'),
-    '디카페인 콜드브루': est({ item: 'decaf-coldbrew', perPackage: 1000, unit: 'g' }, '1봉 1kg'),
-    '콜드브루': est({ item: 'decaf-coldbrew', perPackage: 1000, unit: 'g' }, '바닐라 크림 콜드브루도 디카페인 콜드브루 사용, 1봉 1kg'),
     '미숫가루': est({ item: 'misugaru', perPackage: 1000, unit: 'g' }, '1봉 1kg'),
     '시나몬가루': est({ item: 'cinnamon-powder', perPackage: 500, unit: 'g', perServing: 0.3 }, '1잔 0.3g (한 꼬집)'),
-    '오렌지 가니쉬': est({ item: 'orange-garnish', perPackage: null, unit: 'ea', perServing: 1 }, '1잔 1조각 (1포장 조각 수는 모름)'),
-    '가니쉬': est({ item: 'orange-garnish', perPackage: null, unit: 'ea', perServing: 1 }, '종류 미표기 가니쉬 = 오렌지 1조각'),
-    '레몬청': est({ item: 'lemon-syrup', perPackage: LEMON_G, unit: 'g' }, '레몬 1개 ≈ 레몬청 100g 으로 봄'),
-    '레몬 가니쉬': est({ item: 'lemon-syrup', perPackage: LEMON_G, unit: 'g', perServing: LEMON_G / LEMON_SLICES }, '생레몬 1개 = 8조각, 1잔 1조각 (1조각 = 레몬 1/8 = 12.5g 상당)'),
-    '대추 가니쉬': est({ item: 'jujube', perPackage: null, unit: 'ea', perServing: 2 }, '1잔 대추 2개'),
+    '오렌지 가니쉬': est({ item: 'orange-garnish', perPackage: 100, unit: 'g', perServing: SLICE_G }, `1잔 1조각·1봉 100g(확인) + 건조 1조각 ≈ ${SLICE_G}g`),
+    '가니쉬': est({ item: 'lemon-syrup', perPackage: 100, unit: 'g', perServing: SLICE_G }, `종류 미표기 가니쉬 = 레몬(확인) + 건조 1조각 ≈ ${SLICE_G}g`),
+    '레몬청': est({ item: 'lemon-syrup', perPackage: LEMON_G, unit: 'g' }, '레몬청용 생레몬 1개 ≈ 청 100g 으로 봄'),
+    '레몬 가니쉬': est({ item: 'lemon-syrup', perPackage: 100, unit: 'g', perServing: SLICE_G }, `건조레몬 1봉 100g(확인) + 1조각 ≈ ${SLICE_G}g`),
     '잣(미표기)': est({ item: 'pine-nut', perPackage: null, unit: 'ea', perServing: 3 }, '1잔 잣 3개'),
-    '아이스크림': est({ item: 'ice-cream', perPackage: null, unit: 'scoop', perServing: 1 }, '1잔 1스쿱 (1통 스쿱 수는 모름)'),
-    '초코드리즐': est({ item: 'choco-sauce', perPackage: 2600, unit: 'g', perServing: 10 }, '아포가토 드리즐 = 초코소스 10g'),
-    '애플유자티': est({ item: 'apple-tea', perPackage: 25, unit: 'bag', perServing: 1 }, '1잔 티백 1봉'),
-    '티백 캐모마일': est({ item: 'chamomile', perPackage: 20, unit: 'bag', perServing: 1 }, '1잔 티백 1봉'),
-    '티백 루이보스': est({ item: 'rooibos', perPackage: 30, unit: 'bag', perServing: 1 }, '1잔 티백 1봉'),
-    '티백 파인우롱': est({ item: 'pine-oolong', perPackage: 20, unit: 'bag', perServing: 1 }, '1잔 티백 1봉'),
-    '티백 작설녹차': est({ item: 'jakseol-green-tea', perPackage: 30, unit: 'bag', perServing: 1 }, '1잔 티백 1봉'),
-    // 탄산수·토마토·키위·대추·잣·오렌지가니쉬·아이스크림의 1포장 양은 추정하지 않음 (시트 기준과 맞지 않거나 근거 없음)
+    '아이스크림': est({ item: 'ice-cream', perPackage: null, unit: 'scoop', perServing: 2 }, '1잔 2스쿱(확인) · 1통에서 몇 스쿱인지는 모름'),
+    // 토마토·키위·대추·잣·아이스크림의 1포장 양은 추정하지 않는다 (근거 없음 — 원자료 양만 집계)
   },
   MODIFIERS: {
-    hazelnut: { ingredient: '헤이즐넛시럽', qty: 15, unit: 'g', assumed: true, basis: '옵션 1건 = 1펌프 15g' },
+    hazelnut: { ingredient: '헤이즐넛시럽', qty: 5, unit: 'g', assumed: true, basis: '1펌프 5g(확인) × 옵션 1건에 1펌프로 봄' },
   },
   PRODUCT_MAP: {
     '노아주스': est({ items: { 'noa-orange': 0.25, 'noa-carrot': 0.25, 'noa-mango': 0.25, 'noa-kiwi': 0.25 } }, '종류 정보 없음 → 4종 균등'),
@@ -58,7 +44,9 @@ export const ESTIMATES = {
   recipes: [
     { menu: '유자차', variant: 'HOT', ingredients: [{ name: '유자청', qty: 45, unit: 'g' }, { name: '오렌지 가니쉬', qty: 1, unit: 'serving' }], assumed: true, basis: '청귤차와 같은 방식 (청 3스쿱 45g)' },
     { menu: '유자차', variant: 'ICE', ingredients: [{ name: '유자청', qty: 45, unit: 'g' }, { name: '오렌지 가니쉬', qty: 1, unit: 'serving' }], assumed: true, basis: '청귤차와 같은 방식 (청 3스쿱 45g)' },
-    { menu: '대추차', variant: 'ICE', copyOf: 'HOT', assumed: true, basis: 'HOT 레시피와 같다고 봄' },
+    // 사용자 확인(2026-09): 대추차의 대추는 6조각 (인쇄 레시피의 "대추 5개"를 고쳐 적어 주심)
+    { menu: '대추차', variant: 'HOT', ingredients: [{ name: '대추원액', qty: 2, unit: 'bag' }, { name: '대추', qty: 6, unit: 'ea' }, { name: '잣', qty: 6, unit: 'ea' }], assumed: true, basis: '사용자 확인: 대추 6조각 (대추 1개를 여러 조각으로 잘라 씀)' },
+    { menu: '대추차', variant: 'ICE', ingredients: [{ name: '대추원액', qty: 2, unit: 'bag' }, { name: '대추', qty: 6, unit: 'ea' }, { name: '잣', qty: 6, unit: 'ea' }], assumed: true, basis: 'HOT 레시피와 같다고 봄 (대추 6조각)' },
     {
       menu: '옛날미숫가루',
       variant: 'ICE',

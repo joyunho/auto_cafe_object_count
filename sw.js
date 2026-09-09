@@ -3,6 +3,7 @@
 const VERSION = 'dev';
 const CACHE_PREFIX = 'cafe-inventory-';
 const CACHE = `${CACHE_PREFIX}${VERSION}`;
+// pdf.js 는 여기 없다: PDF 를 넣을 때만 CDN 에서 받는다 (평소에는 내려받지 않는다)
 const SHELL = [
   './',
   './index.html',
@@ -15,6 +16,12 @@ const SHELL = [
   './src/logic/stats.js',
   './src/logic/match.js',
   './src/logic/forecast.js',
+  './src/logic/pos.js',
+  './src/logic/consumption.js',
+  './src/logic/pos-model.js',
+  './src/logic/pdf-text.js',
+  './src/data/pos-map.js',
+  './src/data/pos-estimates.js',
   './src/ai/extract.js',
   './src/ui/html.js',
   './src/ui/count.js',
@@ -25,12 +32,14 @@ const SHELL = [
   './src/ui/photo.js',
   './icons/icon.svg',
 ];
+// 있으면 좋지만 없어도 앱이 도는 파일 (레시피 표는 배포 설정에 따라 없을 수 있다) — 실패해도 설치를 막지 않는다
+const OPTIONAL = ['./src/data/recipes.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(SHELL))
+      .then((c) => c.addAll(SHELL).then(() => Promise.all(OPTIONAL.map((u) => c.add(u).catch(() => {})))))
       .then(() => self.skipWaiting()),
   );
 });

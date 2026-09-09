@@ -195,7 +195,7 @@ test('1. 원격이 비어 있으면: 확정 스냅샷이 다 오면 flush 가 �
   sync.start();
   assert.equal(app.last.state, 'connecting');
   assert.equal(app.last.backend, 'fake');
-  assert.equal(backend.watchers.length, 6, '컬렉션 4 + 설정 문서 1 + 표시 문서 1');
+  assert.equal(backend.watchers.length, 7, '컬렉션 4 + 설정 문서 1 + 소비 모델 문서 1 + 표시 문서 1');
   backend.emit('items');
   backend.emit('groups');
   backend.emit('sessions');
@@ -584,7 +584,7 @@ test('9b. 첫 스냅샷이 다 오지 않았으면 시간이 지나도 기다리
 // ── 10. close ─────────────────────────────────────────────
 test('10. close(): 구독 해제 · 백엔드 닫기 · 상태 off · 이후 schedule/flush/스냅샷은 무시', async () => {
   const { app, backend, sync } = await boot(baseState({ items: [{ id: 'a', name: 'A' }] }), {});
-  assert.equal(backend.watchers.length, 6);
+  assert.equal(backend.watchers.length, 7);
   backend.calls.length = 0;
   sync.close();
   assert.equal(backend.watchers.length, 0, '모두 구독 해제');
@@ -1354,4 +1354,112 @@ test('28b. 저장 공간 때문에 기준선을 버리면 다음 저장이 건�
 
   sync.close(); // synced 는 그대로지만 마지막 저장 내용 메모를 지웠으므로 다시 쓴다
   assert.deepEqual(bl.raw && JSON.parse(bl.raw).docs, saved, '한 번의 저장 공간 부족이 남은 실행 내내 기준선을 없애지 않는다');
+});
+
+// ── 29. 소비 모델(meta/consumption) 공유 ───────────────────
+const MODEL = (perDay = 1) => ({ version: 1, source: 'POS 2026-09', months: ['2026-09'], items: { milk: { perDay: { '2026-09': perDay }, avgPerDay: perDay, unit: 'ml', estimated: true } }, coverage: { '2026-09': { from: '2026-09-01', to: '2026-09-08', days: 8 } } });
+
+test('29. 불러온 소비 모델은 meta/consumption 으로 올라가고 다른 기기에 그대로 내려온다', async () => {
+  const { store, A, B } = await twoDevices();
+  A.backend.calls.length = 0;
+  A.app.state.consumption = MODEL();
+  A.sync.schedule(0);
+  await settle();
+  const op = A.backend.calls.find((c) => c.coll === 'meta' && c.id === 'consumption');
+  assert.ok(op, 'meta/consumption 으로 올라간다');
+  assert.equal(op.op, 'set');
+  assert.deepEqual(store.meta.get('consumption'), MODEL());
+
+  assert.equal(B.app.state.consumption, undefined, '아직 못 받았다');
+  B.backend.emit('meta'); // B 가 원격 스냅샷을 받는다 (새로고침 없이)
+  await settle();
+  assert.deepEqual(B.app.state.consumption, MODEL());
+  assert.ok(B.app.remoteChanges > 0, '화면을 다시 그린다');
+
+  // 같은 모델이 또 와도 다시 그리지 않는다
+  const before = B.app.remoteChanges;
+  B.backend.emit('meta');
+  await settle();
+  assert.equal(B.app.remoteChanges, before);
+});
+
+test('29b. 모델을 바꾸면 그 차이만 다시 올라가고, 지운 기기(false)는 원격 모델로 되살아나지 않는다', async () => {
+  const { store, A, B } = await twoDevices();
+  A.app.state.consumption = MODEL(1);
+  A.sync.schedule(0);
+  await settle();
+  B.backend.emit('meta');
+  await settle();
+  assert.deepEqual(B.app.state.consumption, MODEL(1));
+
+  // B 에서 지운다 → 원격 문서는 그대로 두고(다른 기기의 모델을 없애지 않는다) 이 기기만 끈다
+  B.backend.calls.length = 0;
+  B.app.state.consumption = false;
+  B.sync.schedule(0);
+  await settle();
+  assert.equal(B.backend.calls.filter((c) => c.id === 'consumption').length, 0, '지우기는 원격에 보내지 않는다');
+  assert.ok(store.meta.get('consumption'), '원격 모델은 남는다');
+
+  // A 가 새 모델을 올려도 B 는 지운 상태 그대로
+  A.app.state.consumption = MODEL(2);
+  A.sync.schedule(0);
+  await settle();
+  B.backend.emit('meta');
+  await settle();
+  assert.equal(B.app.state.consumption, false, '지운 뜻이 유지된다');
+  assert.deepEqual(store.meta.get('consumption'), MODEL(2));
+});
+
+test('29c. 모델이 없거나 내장 모델 그대로면 아무것도 올리지 않는다 (빌드마다 다른 내장 모델이 서로 덮어쓰지 않게)', async () => {
+  const { store, A } = await twoDevices();
+  A.backend.calls.length = 0;
+  A.sync.schedule(0);
+  await settle();
+  assert.equal(store.meta.has('consumption'), false);
+
+  globalThis.window = { __CONSUMPTION_MODEL__: MODEL(3) };
+  try {
+    A.app.state.consumption = MODEL(3); // 내장 모델 그대로
+    A.sync.schedule(0);
+    await settle();
+    assert.equal(store.meta.has('consumption'), false, '내장 모델은 올리지 않는다');
+    A.app.state.consumption = MODEL(4); // 사람이 새 자료를 넣었다
+    A.sync.schedule(0);
+    await settle();
+    assert.deepEqual(store.meta.get('consumption'), MODEL(4));
+  } finally {
+    delete globalThis.window;
+  }
+});
+
+test('29d. 다시 열어도(기준선) 모델이 남고, 오프라인에서 넣은 모델은 원격 문서에 덮이지 않는다', async () => {
+  const bl = memBaseline();
+  const store = newStore();
+  store.meta.set('settings', {});
+  store.meta.set('store', { seededAt: '2026-09-01T00:00:00.000Z', version: 1 });
+  const first = await boot(baseState(), {}, { baseline: bl }, store);
+  first.app.state.consumption = MODEL(1);
+  first.sync.schedule(0);
+  await settle();
+  first.sync.close();
+  assert.equal(JSON.parse(bl.raw).consumption, stable(MODEL(1)), '기준선에 모델도 남는다');
+
+  // 앱을 다시 연다: 원격은 그대로, 로컬에서 새 자료를 넣은 뒤 붙는다 (오프라인에서 넣은 모델)
+  const state2 = baseState({ consumption: MODEL(9) });
+  const again = await boot(state2, {}, { baseline: bl }, store);
+  assert.deepEqual(again.app.state.consumption, MODEL(9), '아직 못 보낸 로컬 모델이 살아남는다');
+  assert.deepEqual(store.meta.get('consumption'), MODEL(9), '그리고 원격에 올라간다');
+  assert.equal(again.sync._baselineLoaded, true);
+});
+
+test('29e. 너무 큰 모델은 올리지 않고 이 기기에만 둔다', async () => {
+  const { store, A } = await twoDevices();
+  const big = MODEL();
+  for (let i = 0; i < 20000; i++) big.items[`x${i}`] = { perDay: { '2026-09': 1 }, avgPerDay: 1, unit: 'ea' };
+  A.app.state.consumption = big;
+  A.sync.schedule(0);
+  await settle();
+  assert.equal(store.meta.has('consumption'), false, '올리지 않는다');
+  assert.match(A.app.last.error || '', /소비 모델이 너무 커서/);
+  assert.equal(A.app.state.consumption, big, '이 기기에서는 그대로 쓴다');
 });

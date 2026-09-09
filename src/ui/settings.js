@@ -2,6 +2,9 @@
 import { esc, fmtDateTime } from './html.js';
 import { exportJSON, importJSON, defaultState, keepSafetyCopy, loadSafetyCopy, builtinModel } from '../store.js';
 import { validateModel } from '../logic/forecast.js';
+import { prepareImport, csvToText, REPORT_TITLE } from '../logic/pos-model.js';
+import { pdfToText } from '../logic/pdf-text.js';
+import { tooBigToShare, MAX_SHARED_BYTES } from '../sync/engine.js';
 import { SHARE_CONFIG } from '../data/share-config.js';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -129,6 +132,82 @@ export function normalizeShareConfigText(text) {
   return { text: JSON.stringify(cfg, null, 2), storeCode: cfg.storeCode || '' };
 }
 
+const n = (x) => Number(x || 0).toLocaleString();
+
+/** 미리보기: 보고서 한 개가 무엇을 바꾸는지 */
+function reportPreview(r) {
+  const where = !r.applied
+    ? `<span class="pill warn">건너뜀</span> 이미 더 긴 기간(${r.prevDays}일)의 자료가 있습니다`
+    : r.added
+      ? `<span class="pill ok">새로 넣음</span> 모델에 <b>${esc(r.month)}</b> 를 새로 넣습니다`
+      : `<span class="pill ok">갱신</span> 모델의 <b>${esc(r.month)}</b> 를 바꿉니다 (지금은 ${r.prevDays}일치)`;
+  const top = r.unmappedTop.filter((u) => u.total > 0).slice(0, 3).map((u) => `${esc(u.product)} ${n(u.total)}건`).join(', ');
+  return `<li>
+    <div><b>${esc(r.from)} ~ ${esc(r.to)}</b> (${r.days}일${r.partial ? ', 달의 일부' : ''})</div>
+    <div class="tiny muted">읽어 들인 상품 줄 ${n(r.rows)}개 · 총 ${n(r.totalQty)}건 (음료 ${n(r.cups)}잔) · 소비량이 계산된 품목 ${n(r.itemCount)}개</div>
+    <div class="tiny muted">레시피가 없어 뺀 상품 ${n(r.unmappedCount)}종 (${n(r.unmappedQty)}건)${top ? ` — ${top}` : ''} · 재료와 무관해 뺀 상품 ${n(r.ignoredCount)}종</div>
+    ${r.spansMonths ? `<div class="tiny" style="color:var(--warn)">기간이 두 달에 걸쳐 있어 ${esc(r.month)} 한 달치로 넣습니다. 달마다 따로 뽑는 편이 정확합니다.</div>` : ''}
+    ${r.unassigned ? `<div class="tiny" style="color:var(--warn)">그룹을 못 찾은 줄 ${n(r.unassigned)}개</div>` : ''}
+    <div class="small">${where}</div>
+  </li>`;
+}
+
+/** POS 보고서 → 소비 모델 카드 (붙여넣기 · 파일 · 미리보기 · 적용) */
+function posCard(s, app) {
+  const p = app?.posPreview || null;
+  const busy = !!app?.posBusy;
+  const model = s.consumption;
+  const months = Array.isArray(model?.months) ? model.months : [];
+  // 기간은 한 번만 (설명 문구에 이미 들어 있으면 덧붙이지 않는다)
+  const range = months.length && !String(model.source || '').includes(months[0]) ? ` · ${esc(months[0])}~${esc(months.at(-1))}` : '';
+  const status = model
+    ? `<p class="small" style="margin:0 0 6px"><span class="pill ok">사용 중</span> ${esc(model.source || '소비 모델')} · 품목 ${Object.keys(model.items).length}개 · ${months.length}달${range}</p>
+       <p class="tiny muted" style="margin:0 0 8px">재고조사 탭에 품목별 예상 재고와 "확인 필요" 표시가 나옵니다. 확정한 재고조사가 최소 1회 있어야 계산됩니다.</p>`
+    : `<p class="small muted" style="margin:0 0 8px">아직 판매 자료가 없습니다. 아래에 POS 보고서를 넣으면 재고조사 탭에 "지금쯤 몇 개"가 미리 채워집니다.</p>`;
+  return `
+    <section class="card" id="pos-card">
+      <h2>포스 자료 넣기 (예상 재고)</h2>
+      ${status}
+      <p class="tiny muted" style="margin:0 0 8px">POS에서 <b>${esc(REPORT_TITLE)}</b>을 원하는 기간(예: 9월 1일~8일)으로 뽑아 넣으면, 앱이 레시피와 곱해 품목별 소비 속도를 다시 계산합니다.
+        포스 PC의 브라우저에서 바로 하면 되고(파일을 휴대폰으로 옮길 필요 없습니다), 공유 저장소에 연결돼 있으면 <b>직원 휴대폰도 저절로 바뀝니다</b>.</p>
+      <div class="field">
+        <label>보고서 내용 붙여넣기</label>
+        <textarea id="pos-paste" data-input="pos-paste" data-id="pos-paste" rows="4" spellcheck="false" placeholder="PDF를 열어 전체 선택(Ctrl+A) → 복사(Ctrl+C) → 여기에 붙여넣기(Ctrl+V)">${esc(app?.posText || '')}</textarea>
+        <div class="hint">기간 줄 "( 2026-09-01   2026-09-08 )" 부터 표 끝까지 통째로 넣으세요. 여러 달을 이어 붙여 한 번에 넣어도 됩니다.</div>
+      </div>
+      <div class="row wrap">
+        <button type="button" class="btn primary" data-action="pos-read" ${busy ? 'disabled' : ''}>읽어 보기</button>
+        <label class="btn">📄 파일 고르기 (PDF·TXT·CSV) <input type="file" accept=".txt,.csv,.pdf,text/plain,text/csv,application/pdf" multiple data-change="pos-files" class="sr-only" /></label>
+        ${busy ? `<span class="small muted">읽는 중…</span>` : ''}
+      </div>
+      ${
+        p
+          ? `<div class="pos-preview">
+              <h3>이대로 넣을까요?</h3>
+              <ul class="small">${p.reports.map(reportPreview).join('')}</ul>
+              <p class="tiny muted">넣고 나면 모델의 달: ${esc(p.months[0])} ~ ${esc(p.months.at(-1))} (${p.months.length}달) · 품목 ${Object.keys(p.model.items).length}개
+                ${p.baseMonths.length ? ` · 지금은 ${p.baseMonths.length}달` : ' · 지금은 없음'}</p>
+              <div class="row wrap">
+                <button type="button" class="btn primary" data-action="pos-apply">적용</button>
+                <button type="button" class="btn ghost" data-action="pos-cancel">취소</button>
+              </div>
+            </div>`
+          : ''
+      }
+      <div class="row wrap mt">
+        ${model ? `<button type="button" class="btn ghost" data-action="model-clear">모델 지우기</button>` : ''}
+        ${!model && builtinModel() ? `<button type="button" class="btn ghost" data-action="model-restore">내장 모델 다시 쓰기</button>` : ''}
+      </div>
+      <details class="pos-more">
+        <summary class="small muted">개발자용: 소비 모델 파일(JSON) 불러오기</summary>
+        <div class="row wrap mt">
+          <label class="btn">📈 소비 모델(JSON) 불러오기 <input type="file" accept="application/json,.json" data-change="model-import" class="sr-only" /></label>
+        </div>
+        <div class="hint">개발자가 <code>scripts/pos-analysis.mjs</code> 로 만든 파일입니다 (README "판매 자료 분석"). 위의 붙여넣기·파일 넣기와 결과는 같습니다.</div>
+      </details>
+    </section>`;
+}
+
 export function render(s, app) {
   const st = s.settings;
   const hasSafety = !!loadSafetyCopy();
@@ -162,20 +241,7 @@ export function render(s, app) {
         </select></div>
     </section>
 
-    <section class="card">
-      <h2>판매 자료 소비 모델 (예상 재고)</h2>
-      ${
-        s.consumption
-          ? `<p class="small" style="margin-bottom:6px"><span class="pill ok">사용 중</span> ${esc(s.consumption.source || '소비 모델')} · 품목 ${Object.keys(s.consumption.items).length}개${s.consumption.months?.length ? ` · ${esc(s.consumption.months[0])}~${esc(s.consumption.months.at(-1))}` : ''}</p>
-             <p class="tiny muted">재고조사 탭에 품목별 예상 재고와 "확인 필요" 표시가 나옵니다. 확정한 재고조사가 최소 1회 있어야 계산됩니다.</p>`
-          : `<p class="small muted">POS 판매 자료 × 레시피로 만든 소비 모델(JSON)을 넣으면 재고조사 탭에 "지금쯤 몇 개"가 미리 채워집니다. 만드는 방법은 README의 "판매 자료 분석" 참고.</p>`
-      }
-      <div class="row wrap">
-        <label class="btn">📈 소비 모델 불러오기 <input type="file" accept="application/json,.json" data-change="model-import" class="sr-only" /></label>
-        ${s.consumption ? `<button type="button" class="btn ghost" data-action="model-clear">모델 지우기</button>` : ''}
-        ${!s.consumption && builtinModel() ? `<button type="button" class="btn ghost" data-action="model-restore">내장 모델 다시 쓰기</button>` : ''}
-      </div>
-    </section>
+    ${posCard(s, app)}
 
     <section class="card">
       <h2>백업 · 복원</h2>
@@ -239,6 +305,51 @@ export async function downloadBackup(app, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** 파일 하나 → 텍스트. PDF 는 pdf.js(CDN)로, CSV 는 칸을 공백으로 바꿔 본다 */
+export async function fileToText(file) {
+  const name = (file.name || '').toLowerCase();
+  if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+    const text = await pdfToText(await file.arrayBuffer());
+    return { text, kind: 'pdf' };
+  }
+  const raw = await file.text();
+  if (name.endsWith('.csv') || file.type === 'text/csv') return { text: raw, alt: csvToText(raw), kind: 'csv' };
+  return { text: raw, kind: 'txt' };
+}
+
+/**
+ * 새 자료를 얹을 밑바탕 모델.
+ * 모델을 지운 기기(false)는 공유 저장소에 있는 모델 → 내장 모델 순으로 밑바탕을 삼는다 —
+ * 빈 모델에서 시작하면 이 기기가 넣은 한 달짜리 모델이 다른 기기의 열두 달을 밀어내 버린다.
+ */
+export function importBase(app) {
+  const c = app.state.consumption;
+  if (c && typeof c === 'object' && c.items) return c;
+  return app.sync?.remoteConsumption || builtinModel() || null;
+}
+
+/** 읽어 들인 텍스트로 미리보기를 만든다 (아직 저장하지 않는다) */
+function showPreview(app, texts, note = '') {
+  const r = prepareImport(texts, importBase(app));
+  if (!r.ok) {
+    app.posPreview = null;
+    app.render();
+    app.toast(note ? `${note} ${r.error}` : r.error, 6000);
+    return false;
+  }
+  app.posPreview = r;
+  app.render();
+  document.getElementById('pos-card')?.scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
+export const inputs = {
+  /** 붙여넣기 칸: 다시 그려도 내용이 남도록 앱에 들고 있는다 (상태에는 넣지 않는다 — 저장·공유 대상이 아니다) */
+  'pos-paste'(el, e, app) {
+    app.posText = el.value;
+  },
+};
+
 export const changes = {
   'model-import'(el, e, app) {
     const file = el.files?.[0];
@@ -257,6 +368,35 @@ export const changes = {
       });
       app.toast(`소비 모델을 불러왔습니다 (품목 ${Object.keys(model.items).length}개)`);
     });
+  },
+  /** 파일 고르기: .txt/.csv/.pdf 여러 개 (PDF 는 pdf.js 를 그때 내려받는다) */
+  'pos-files'(el, e, app) {
+    const files = [...(el.files || [])];
+    el.value = '';
+    if (!files.length) return;
+    app.posBusy = true;
+    app.render();
+    (async () => {
+      const texts = [];
+      const failed = [];
+      for (const f of files) {
+        try {
+          const r = await fileToText(f);
+          texts.push(r.text);
+          if (r.alt) texts.push(r.alt); // CSV: 원문과 칸을 공백으로 바꾼 것 둘 다 시도
+        } catch (err) {
+          failed.push(`${f.name}: ${err?.message || err}`);
+        }
+      }
+      app.posBusy = false;
+      if (!texts.length) {
+        app.render();
+        return app.toast(failed.join(' / ') || '읽을 수 있는 파일이 없습니다', 7000);
+      }
+      const pdfNote = files.some((f) => /\.pdf$/i.test(f.name)) ? 'PDF 에서 글자를 뽑았지만 보고서로 읽지 못했습니다.' : '';
+      const ok = showPreview(app, texts, pdfNote);
+      if (ok && failed.length) app.toast(`일부 파일을 읽지 못했습니다 — ${failed.join(' / ')}`, 7000);
+    })();
   },
   setting(el, e, app) {
     app.set((s) => {
@@ -332,6 +472,31 @@ export const changes = {
 };
 
 export const actions = {
+  /** 붙여 넣은 텍스트를 읽어 미리보기 */
+  'pos-read'(el, e, app) {
+    const text = document.getElementById('pos-paste')?.value ?? app.posText ?? '';
+    app.posText = text;
+    if (!text.trim()) return app.toast('먼저 보고서 내용을 붙여 넣으세요', 3000);
+    showPreview(app, [text]);
+  },
+  'pos-cancel'(el, e, app) {
+    app.posPreview = null;
+    app.render();
+  },
+  /** 미리보기의 모델을 실제로 쓴다 (그리고 공유 저장소로 올라간다) */
+  'pos-apply'(el, e, app) {
+    const p = app.posPreview;
+    if (!p) return;
+    const big = tooBigToShare(p.model);
+    if (big) return app.toast(`소비 모델이 너무 큽니다 (${Math.round(big / 1024)} KB · 한도 ${Math.round(MAX_SHARED_BYTES / 1024)} KB). 달 수를 줄여 다시 넣어 주세요.`, 6000);
+    const months = p.reports.filter((r) => r.applied).map((r) => r.month);
+    app.posPreview = null;
+    app.posText = '';
+    app.update((s) => {
+      s.consumption = p.model;
+    });
+    app.toast(`${months.join(', ')} 자료를 넣었습니다 (모델 ${p.months.length}달 · 품목 ${Object.keys(p.model.items).length}개)${app.syncStatus?.state === 'on' ? ' — 다른 기기에도 곧 반영됩니다' : ''}`, 5000);
+  },
   'model-clear'(el, e, app) {
     if (!confirm('소비 모델을 지울까요? 예상 재고 표시가 사라집니다.')) return;
     app.update((s) => {

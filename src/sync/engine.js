@@ -34,9 +34,15 @@
 //   batch?(ops) → Promise                                     [{op:'set'|'update'|'remove', coll, id, doc|patch}] 한 번에 (선택)
 //   close?()
 
+import { builtinModel } from '../store.js';
+
 export const COLLECTIONS = ['items', 'groups', 'sessions', 'orders'];
 export const META_COLLECTION = 'meta';
 export const SETTINGS_DOC = 'settings';
+/** 소비 모델 문서 (meta/consumption). 설정 문서와 같은 규칙으로 합치고 기준선에도 같이 남는다 */
+export const CONSUMPTION_DOC = 'consumption';
+/** 공유 문서 하나의 안전 한도 (Firestore 문서는 1 MB) — 넘으면 올리지 않는다 */
+export const MAX_SHARED_BYTES = 700 * 1024;
 /** "이 저장소는 처음 올리기가 끝났다" 표시 문서 (meta/store). 없으면 아직 올리는 중이거나 끊긴 것 → 부분 저장소로 본다 */
 export const STORE_DOC = 'store';
 /** 원격에 올리지 않는 설정 (기기마다 다른 값) */
@@ -173,6 +179,29 @@ export function sharedSettings(settings) {
   return out;
 }
 
+/**
+ * 원격과 나눌 소비 모델. 다음 세 가지는 null 을 돌려준다 (= 올리지도, 원격 것을 밀어내지도 않는다):
+ *   - 모델이 없을 때(null)
+ *   - 사용자가 지웠을 때(false) — 지운 기기는 원격 모델을 다시 받지 않고, 남의 모델을 지우지도 않는다
+ *   - 빌드에 심어 둔 내장 모델 그대로일 때 — 그 모델은 이미 모든 기기가 앱 안에 가지고 있다.
+ *     올리면 빌드가 다른 기기끼리 서로 덮어쓰기만 한다.
+ */
+export function sharedConsumption(state) {
+  const c = state?.consumption;
+  if (!isObj(c) || !isObj(c.items) || !Object.keys(c.items).length) return null;
+  const builtin = builtinModel();
+  if (builtin && stable(builtin) === stable(c)) return null;
+  return clone(c);
+}
+
+/** 공유 문서로 보내기에 너무 큰가 (한도를 넘으면 올리지 않고 그대로 이 기기에만 둔다) */
+export function tooBigToShare(doc) {
+  if (doc == null) return false;
+  const json = JSON.stringify(doc);
+  const bytes = typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(json).length : Buffer.byteLength(json, 'utf8');
+  return bytes > MAX_SHARED_BYTES ? bytes : false;
+}
+
 /** 로컬 상태 → 컬렉션별 문서 맵 */
 function localDocs(state, coll) {
   const m = new Map();
@@ -215,14 +244,14 @@ export function createSync(app, backend, opts = {}) {
   const readyTimeoutMs = opts.readyTimeoutMs ?? 8000;
   const log = opts.log || (() => {});
   const baselineStore = opts.baseline || null;
-  const synced = { items: new Map(), groups: new Map(), sessions: new Map(), orders: new Map(), meta: null };
+  const synced = { items: new Map(), groups: new Map(), sessions: new Map(), orders: new Map(), meta: null, consumption: null };
   let baselineLoaded = false; // 저장해 둔 기준선을 읽어 왔다 = 이 기기가 전에 이 저장소와 맞춘 적이 있다
   let baselineJson = null; // 마지막으로 저장한 내용 (같으면 다시 쓰지 않는다)
-  const remote = { items: null, groups: null, sessions: null, orders: null, meta: undefined, store: undefined }; // 첫 스냅샷 전: null/undefined
+  const remote = { items: null, groups: null, sessions: null, orders: null, meta: undefined, consumption: undefined, store: undefined }; // 첫 스냅샷 전: null/undefined
   let storeMarked = false; // meta/store 표시가 원격에 있는가 (우리가 썼거나 받았거나)
   const definitive = new Set(); // fromCache=false 스냅샷을 받은 컬렉션
   // 보내는 중(확인 전)인 문서: id → 보낸 뒤 원격이 될 내용(stable). 확인 전에 되돌아오는 메아리를 알아보는 데 쓴다
-  const inflight = { items: new Map(), groups: new Map(), sessions: new Map(), orders: new Map(), meta: undefined };
+  const inflight = { items: new Map(), groups: new Map(), sessions: new Map(), orders: new Map(), meta: undefined, consumption: undefined };
   const unsubs = [];
   let status = { state: 'connecting', backend: backend.name, error: null, lastSyncAt: null };
   let started = false;
@@ -263,6 +292,10 @@ export function createSync(app, backend, opts = {}) {
       synced.meta = saved.meta;
       n++;
     }
+    if (typeof saved.consumption === 'string') {
+      synced.consumption = saved.consumption;
+      n++;
+    }
     baselineLoaded = n > 0;
     log('baseline loaded', n, 'docs');
   }
@@ -278,11 +311,11 @@ export function createSync(app, backend, opts = {}) {
     if (!baselineStore || app.stateSaved === false) return;
     const docs = {};
     for (const coll of COLLECTIONS) docs[coll] = Object.fromEntries(synced[coll]);
-    const json = JSON.stringify({ docs, meta: synced.meta ?? null });
+    const json = JSON.stringify({ docs, meta: synced.meta ?? null, consumption: synced.consumption ?? null });
     if (json === baselineJson) return; // 바뀐 것이 없으면 쓰지 않는다
     baselineJson = json;
     try {
-      baselineStore.save({ v: 1, backend: backend.name, savedAt: new Date().toISOString(), docs, meta: synced.meta ?? null });
+      baselineStore.save({ v: 1, backend: backend.name, savedAt: new Date().toISOString(), docs, meta: synced.meta ?? null, consumption: synced.consumption ?? null });
     } catch (e) {
       log('baseline save failed', e?.message || e); // 저장하지 못해도 앱은 그대로 (다음 실행은 합치기로 시작)
     }
@@ -327,6 +360,14 @@ export function createSync(app, backend, opts = {}) {
     unsubs.push(
       backend.watchDoc(
         META_COLLECTION,
+        CONSUMPTION_DOC,
+        (doc, meta) => onRemote('consumption', doc, meta),
+        (err) => fail(err),
+      ),
+    );
+    unsubs.push(
+      backend.watchDoc(
+        META_COLLECTION,
         STORE_DOC,
         (doc, meta) => onRemote('store', doc, meta),
         (err) => fail(err),
@@ -341,9 +382,9 @@ export function createSync(app, backend, opts = {}) {
     }, readyTimeoutMs);
   }
 
-  const allFirstSnapshots = () => COLLECTIONS.every((c) => remote[c] !== null) && remote.meta !== undefined && remote.store !== undefined;
-  const allDefinitive = () => COLLECTIONS.every((c) => definitive.has(c)) && definitive.has('meta') && definitive.has('store');
-  const remoteEmpty = () => COLLECTIONS.every((c) => !remote[c] || remote[c].size === 0) && !remote.meta && !remote.store;
+  const allFirstSnapshots = () => COLLECTIONS.every((c) => remote[c] !== null) && remote.meta !== undefined && remote.consumption !== undefined && remote.store !== undefined;
+  const allDefinitive = () => COLLECTIONS.every((c) => definitive.has(c)) && definitive.has('meta') && definitive.has('consumption') && definitive.has('store');
+  const remoteEmpty = () => COLLECTIONS.every((c) => !remote[c] || remote[c].size === 0) && !remote.meta && !remote.consumption && !remote.store;
 
   function fail(err) {
     log('sync error', err);
@@ -352,7 +393,7 @@ export function createSync(app, backend, opts = {}) {
 
   function onRemote(coll, docs, meta) {
     if (closed) return;
-    remote[coll] = coll === 'meta' || coll === 'store' ? (docs == null ? null : docs) : docs;
+    remote[coll] = coll === 'meta' || coll === 'consumption' || coll === 'store' ? (docs == null ? null : docs) : docs;
     if (!meta?.fromCache) definitive.add(coll);
     if (coll === 'store') {
       if (docs) storeMarked = true;
@@ -379,6 +420,7 @@ export function createSync(app, backend, opts = {}) {
       // 남겨 두면 flush 가 있지도 않은 문서에 remove 를 보내고, 로컬 문서를 다시 올리지 않는다
       for (const coll of COLLECTIONS) synced[coll].clear();
       synced.meta = null;
+      synced.consumption = null;
       baselineLoaded = false;
     } else {
       // 빈 초안은 원격에 같은 장부의 초안이 있으면 버린다 (기기마다 자동으로 생긴 초안이 겹치지 않게)
@@ -412,6 +454,8 @@ export function createSync(app, backend, opts = {}) {
         synced.meta = stable(remote.meta);
         s.settings = { ...s.settings, ...clone(remote.meta) };
       }
+      // 소비 모델도 같은 규칙 (기준선이 있으면 세 값 비교, 없으면 원격이 기준). 지운 기기(false)는 applyRemote 가 건너뛴다
+      applyRemote('consumption', true);
       app.persist(true);
       app.onRemoteChange?.();
     }
@@ -442,6 +486,23 @@ export function createSync(app, backend, opts = {}) {
         synced.meta = json;
         if (stable(merged) !== stable(localShared)) {
           s.settings = { ...s.settings, ...merged };
+          changed = true;
+        }
+      }
+    } else if (coll === 'consumption') {
+      // 소비 모델: 설정 문서와 같은 세 값 비교. 다만 두 가지는 원격을 받아들이지 않는다 —
+      //   · 사용자가 지운 기기(false): 다시 살아나면 지운 뜻이 무시된다
+      //   · 원격 문서가 모델 모양이 아닐 때
+      const doc = remote.consumption;
+      const json = doc ? stable(doc) : null;
+      if (json !== synced.consumption && json !== inflight.consumption) {
+        const local = sharedConsumption(s);
+        const syncedObj = synced.consumption ? JSON.parse(synced.consumption) : null;
+        const localPatch = syncedObj && local ? diff(syncedObj, local) : {};
+        const merged = doc ? (Object.keys(localPatch).length ? applyPatch(clone(doc), localPatch) : clone(doc)) : local;
+        synced.consumption = json;
+        if (s.consumption !== false && isObj(merged) && isObj(merged.items) && Object.keys(merged.items).length && stable(merged) !== stable(local)) {
+          s.consumption = merged;
           changed = true;
         }
       }
@@ -562,6 +623,16 @@ export function createSync(app, backend, opts = {}) {
       const meta = sharedSettings(s.settings);
       const metaJson = stable(meta);
       if (metaJson !== synced.meta) ops.push({ op: 'set', coll: META_COLLECTION, id: SETTINGS_DOC, doc: meta, json: metaJson, meta: true });
+      // 소비 모델: 올릴 것이 있을 때만 (지웠거나 내장 모델 그대로면 sharedConsumption 이 null → 원격 문서를 지우지 않는다)
+      const model = sharedConsumption(s);
+      const modelJson = model ? stable(model) : null;
+      if (model && modelJson !== synced.consumption) {
+        const big = tooBigToShare(model);
+        if (big) {
+          log('consumption model too big to share', big, '>', MAX_SHARED_BYTES);
+          setStatus({ error: `소비 모델이 너무 커서(${Math.round(big / 1024)} KB) 공유하지 못했습니다. 이 기기에서는 그대로 씁니다.` });
+        } else ops.push({ op: 'set', coll: META_COLLECTION, id: CONSUMPTION_DOC, doc: model, json: modelJson, consumption: true });
+      }
       // 처음 올리기가 끝나면(그리고 표시가 아직 없으면) 맨 끝에 "다 올렸다" 표시를 쓴다
       if (!storeMarked) ops.push({ op: 'set', coll: META_COLLECTION, id: STORE_DOC, doc: { seededAt: new Date().toISOString(), version: 1 }, store: true });
       if (!ops.length) {
@@ -576,12 +647,14 @@ export function createSync(app, backend, opts = {}) {
         try {
           for (const o of ops) {
             if (o.meta) inflight.meta = o.json;
+            else if (o.consumption) inflight.consumption = o.json;
             else if (!o.store && o.op !== 'remove') inflight[o.coll].set(o.id, o.json);
           }
           await backend.batch(ops.map((o) => ({ op: o.op, coll: o.coll, id: o.id, doc: o.doc })));
           for (const o of ops) {
             if (o.store) storeMarked = true;
             else if (o.meta) synced.meta = o.json;
+            else if (o.consumption) synced.consumption = o.json;
             else if (o.op === 'remove') synced[o.coll].delete(o.id);
             else synced[o.coll].set(o.id, o.json);
           }
@@ -590,6 +663,7 @@ export function createSync(app, backend, opts = {}) {
           log('batch failed, sending one by one', e?.message || e);
         } finally {
           inflight.meta = undefined;
+          inflight.consumption = undefined;
           for (const c of COLLECTIONS) inflight[c].clear();
         }
       }
@@ -597,6 +671,7 @@ export function createSync(app, backend, opts = {}) {
         if (closed) break; // 닫힌 엔진은 더 보내지 않는다 (새 엔진이 이어서 맡는다)
         // 보내는 동안 되돌아오는 메아리(확인 전 스냅샷)를 applyRemote 가 알아보도록 보낸 내용을 적어 둔다
         if (o.meta) inflight.meta = o.json;
+        else if (o.consumption) inflight.consumption = o.json;
         else if (!o.store && o.op !== 'remove') inflight[o.coll].set(o.id, o.json);
         try {
           let patched = false; // update 로 보냈는가 (set 으로 대체했으면 원격 = o.doc)
@@ -612,6 +687,7 @@ export function createSync(app, backend, opts = {}) {
           } else await backend.remove(o.coll, o.id);
           if (o.store) storeMarked = true;
           else if (o.meta) synced.meta = o.json;
+          else if (o.consumption) synced.consumption = o.json;
           else if (o.op === 'remove') synced[o.coll].delete(o.id);
           else if (patched) {
             // 보내는 동안 원격 스냅샷이 synced 를 바꿨을 수 있다 (다른 기기가 다른 품목을 셈).
@@ -626,6 +702,7 @@ export function createSync(app, backend, opts = {}) {
           break;
         } finally {
           if (o.meta) inflight.meta = undefined;
+          else if (o.consumption) inflight.consumption = undefined;
           else if (!o.store && o.op !== 'remove') inflight[o.coll].delete(o.id);
         }
       }
@@ -697,6 +774,13 @@ export function createSync(app, backend, opts = {}) {
     },
     get ready() {
       return ready;
+    },
+    /**
+     * 공유 저장소에 있는(마지막으로 맞춘) 소비 모델. 모델을 지운 기기가 새 자료를 넣을 때
+     * 이것을 밑바탕으로 삼아야 다른 기기의 달들을 지우지 않는다.
+     */
+    get remoteConsumption() {
+      return synced.consumption ? JSON.parse(synced.consumption) : null;
     },
     /** 테스트용: 마지막으로 맞춘 상태 */
     _synced: synced,
