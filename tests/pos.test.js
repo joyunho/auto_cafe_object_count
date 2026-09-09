@@ -64,3 +64,27 @@ test('daysInMonth', () => {
   assert.equal(daysInMonth('2026-02'), 28);
   assert.equal(daysInMonth('2026-07'), 31);
 });
+
+// 실제 보고서에는 금액이 음수인 줄이 있다 (포인트결제·계좌이체 등). 숫자 정규식이 마이너스를 못 읽으면
+// 그 줄이 통째로 버려져 합계가 원본과 어긋난다 — 12개월 누계로 수량 5,509건·할인 275만원이 빠졌었다.
+test('parseSalesReport: 금액이 음수인 줄도 읽는다', () => {
+  const src = `그룹별 매출분석
+( 2026-01-01   2026-01-31 ) ∼
+그룹코드 상품그룹 상품 단가 수량 금액 할인
+기타
+포인트결제 0 -12 -24,000 -1,000
+계좌이체 0 -1 -5,000 0
+hot아메리카노 4,000 10 40,000 0
+기타 합계 -3 11,000 -1,000
+`;
+  const rep = parseSalesReport(src);
+  const by = Object.fromEntries(rep.rows.map((r) => [r.product, r]));
+  assert.equal(rep.rows.length, 3);
+  assert.equal(rep.unassigned, 0);
+  assert.equal(by['포인트결제'].qty, -12);
+  assert.equal(by['포인트결제'].amount, -24000);
+  assert.equal(by['포인트결제'].discount, -1000);
+  assert.equal(by['계좌이체'].amount, -5000);
+  assert.equal(by['hot아메리카노'].amount, 40000);
+  for (const r of rep.rows) assert.equal(r.group, '기타');
+});

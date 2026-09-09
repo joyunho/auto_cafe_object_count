@@ -37,14 +37,15 @@ export function parseSalesReport(text) {
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('Page ') || line.includes('그룹코드')) continue;
-    const total = /^(.+?)\s+합계\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)$/.exec(line);
+    // 숫자 앞의 마이너스까지 읽는다 — 포인트결제·계좌이체처럼 금액이 음수인 줄이 있다 (없으면 그 줄이 통째로 버려진다)
+    const total = /^(.+?)\s+합계\s+(-?[\d,]+)\s+(-?[\d,]+)\s+(-?[\d,]+)$/.exec(line);
     if (total) {
       const group = normalizeGroup(total[1]);
       for (const r of pending) rows.push({ ...r, group });
       pending = [];
       continue;
     }
-    const m = /^(.+?)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)\s+([\d,]+)$/.exec(line);
+    const m = /^(.+?)\s+(-?[\d,]+)\s+(-?[\d,]+)\s+(-?[\d,]+)\s+(-?[\d,]+)$/.exec(line);
     if (!m) continue;
     const name = m[1].trim();
     if (/^\d{5}$/.test(name)) continue; // 그룹코드만 있는 줄
