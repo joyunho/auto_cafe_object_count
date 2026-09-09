@@ -18,7 +18,7 @@ const result = await esbuild.build({
   minify: false,
   write: false,
   charset: 'utf8',
-  target: ['es2022'],
+  target: ['es2020'],
   define: { __SINGLE_FILE__: 'true' },
   logLevel: 'warning',
 });

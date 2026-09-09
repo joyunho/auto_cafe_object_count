@@ -319,6 +319,7 @@ export function mergeMonth(base, incoming, range) {
 
 /**
  * 붙여 넣은 텍스트(여러 개 가능) → 미리보기 + 적용할 모델. 아직 아무것도 저장하지 않는다.
+ * 레시피 표를 따로 넘기지 않으려면 먼저 `await recipesReady` — 레시피는 앱을 연 뒤 따로 읽어 온다.
  * @param {string|string[]} texts
  * @param {object|null} base 지금 쓰는 모델
  * @param {object} [opts] analyze 로 넘어가는 설정
@@ -327,9 +328,7 @@ export function mergeMonth(base, incoming, range) {
 export function prepareImport(texts, base, opts = {}) {
   const list = readReports(texts);
   if (!list.length) return { ok: false, error: reportProblem(texts) };
-  if (!(opts.recipes || RECIPES).length) {
-    return { ok: false, error: '레시피 자료가 이 앱에 들어 있지 않아 재료 소비량을 계산할 수 없습니다. (배포 설정에서 레시피를 넣어야 합니다)' };
-  }
+  if (!(opts.recipes || RECIPES).length) return { ok: false, error: NO_RECIPES };
   let model = normalizeModel(base);
   const baseMonths = [...model.months];
   const reports = [];

@@ -2,7 +2,7 @@
 import { esc, fmtDateTime } from './html.js';
 import { exportJSON, importJSON, defaultState, keepSafetyCopy, loadSafetyCopy, builtinModel } from '../store.js';
 import { validateModel } from '../logic/forecast.js';
-import { prepareImport, csvToText, REPORT_TITLE } from '../logic/pos-model.js';
+import { prepareImport, csvToText, REPORT_TITLE, recipesReady } from '../logic/pos-model.js';
 import { pdfToText } from '../logic/pdf-text.js';
 import { tooBigToShare, MAX_SHARED_BYTES } from '../sync/engine.js';
 import { SHARE_CONFIG } from '../data/share-config.js';
@@ -328,8 +328,9 @@ export function importBase(app) {
   return app.sync?.remoteConsumption || builtinModel() || null;
 }
 
-/** 읽어 들인 텍스트로 미리보기를 만든다 (아직 저장하지 않는다) */
-function showPreview(app, texts, note = '') {
+/** 읽어 들인 텍스트로 미리보기를 만든다 (아직 저장하지 않는다). 레시피 표를 다 읽은 뒤에 계산한다 */
+async function showPreview(app, texts, note = '') {
+  await recipesReady;
   const r = prepareImport(texts, importBase(app));
   if (!r.ok) {
     app.posPreview = null;
@@ -394,7 +395,7 @@ export const changes = {
         return app.toast(failed.join(' / ') || '읽을 수 있는 파일이 없습니다', 7000);
       }
       const pdfNote = files.some((f) => /\.pdf$/i.test(f.name)) ? 'PDF 에서 글자를 뽑았지만 보고서로 읽지 못했습니다.' : '';
-      const ok = showPreview(app, texts, pdfNote);
+      const ok = await showPreview(app, texts, pdfNote);
       if (ok && failed.length) app.toast(`일부 파일을 읽지 못했습니다 — ${failed.join(' / ')}`, 7000);
     })();
   },
@@ -477,7 +478,7 @@ export const actions = {
     const text = document.getElementById('pos-paste')?.value ?? app.posText ?? '';
     app.posText = text;
     if (!text.trim()) return app.toast('먼저 보고서 내용을 붙여 넣으세요', 3000);
-    showPreview(app, [text]);
+    showPreview(app, [text]); // 비동기 — 레시피를 다 읽은 뒤 미리보기가 뜬다
   },
   'pos-cancel'(el, e, app) {
     app.posPreview = null;
