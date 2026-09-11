@@ -197,6 +197,7 @@ POS의 "그룹별 매출분석" 보고서와 메뉴 레시피가 있으면, 세�
 node scripts/pos-analysis.mjs        # data/analysis.json, data/consumption.json 생성 + 요약 출력
 node scripts/pos-report.mjs          # docs/analysis/index.html 보고서 (매출 금액 없음)
 node scripts/make-pdf.mjs docs/analysis/index.html "docs/판매데이터-소비량-분석.pdf"
+node scripts/sku-audit.mjs           # 상품명 정합 감사 — 새 달 자료를 넣을 때마다 돌려서 이름 교대·병합·중복을 사람이 확인
 ```
 
 - 계산 본체는 [`src/logic/pos-model.js`](src/logic/pos-model.js) 하나입니다. 스크립트와 앱이 **같은 함수**를 부르므로
@@ -205,6 +206,7 @@ node scripts/make-pdf.mjs docs/analysis/index.html "docs/판매데이터-소비�
   (`node scripts/build-recipes-module.mjs`, `build-recipes.mjs` 가 자동으로 부릅니다). **금액 자료는 들어 있지 않습니다** — 메뉴·재료·양뿐입니다.
 - `data/`(매출 자료·소비 모델)와 생성된 보고서(`docs/analysis/`, PDF)는 **저장소에 올리지 않습니다**(.gitignore). 공개 저장소이기 때문입니다. 보고서는 위 명령으로 언제든 다시 만들 수 있습니다.
 - `data/consumption.json`이 있으면 `npm run build`가 단일 파일 빌드에 소비 모델을 심습니다(비공개 배포용). GitHub Pages 배포판에는 내장 모델이 없으므로 위의 "포스 자료 넣기"로 한 번 넣어 주면 됩니다 (설정 탭 → 개발자용 → 소비 모델 파일(JSON) 불러오기도 그대로 있습니다).
+- 상품명 정합 층: [`src/logic/sku.js`](src/logic/sku.js) + 대응표 [`src/data/sku-map.js`](src/data/sku-map.js). POS 상품명이 달마다 흔들려도(띄어쓰기·오타·슬래시 병합·재등록) 상품 단위 시계열이 끊기지 않게 안정된 id(`canonicalKey`)와 가족 id(`familyOf`, hot/ice 변형·병합 SKU 묶음)를 주고, `buildSeries` 로 상품×월 표를 만듭니다(각 달 합계는 원본과 같음). `pos-map.js` 의 키는 POS 이름 그대로이며 이 층은 그 위에 얹힐 뿐 건드리지 않습니다. 규칙으로 못 잇는 것은 대응표에 근거(어느 달에 교대가 보였는지)와 함께 적고, 의심스러운 것은 넣지 않고 감사 스크립트의 "의심 쌍"에 남깁니다.
 - 연결표: `src/data/pos-map.js` (POS 상품명 → 레시피 메뉴·에스프레소 단품·옵션·병음료, 레시피 재료 → 재고 품목 + 1포장 크기). 자료에 없는 값은 **가정하지 않고** `perPackage: null`로 비워 둡니다(원재료 양만 계산, 앱 예상 재고에서는 제외). 보고서 3장의 확인 목록에 답이 오면 그 값을 채우고 다시 돌리면 됩니다.
 - 레시피에 수량이 인쇄되지 않은 재료(가니쉬·거품·티백 봉 수 등)는 수량을 지어내지 않고 잔 수(`serving`)로만 집계합니다. 같은 이유로 HOT/ICE 레시피가 없는 메뉴는 "레시피 없음"으로 남깁니다.
 - 그래도 계산을 진행하기 위한 **추정값 층**이 `src/data/pos-estimates.js`에 따로 있습니다(1샷 18g, 시럽 밀도 1.3, 티백 1봉 등, 근거 표기). 기본으로 덧씌워 계산하며 해당 품목은 보고서와 앱에 "추정"으로 표시됩니다. `node scripts/pos-analysis.mjs --no-estimates` 로 끄고, 실제 값이 확인되면 `pos-map.js`에 넣고 추정값은 지웁니다.
