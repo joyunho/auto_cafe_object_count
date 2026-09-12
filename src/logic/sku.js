@@ -12,7 +12,7 @@
 // 원칙: 모르는 건 잇지 않는다. 규칙과 대응표에 없는 이름은 정규화한 이름 그대로 id 가 되고, 의심 쌍은 감사 표에만 남는다.
 // 수량 0 인 줄(죽은 코드)은 합계에는 넣되 등장 달·첫/마지막 달·동시 판매 판정에서는 뺀다 — 안 빼면 가짜 그룹 이동·가짜 중복이 생긴다.
 
-import { SPELLING, RENAMES, FAMILIES, DUPLICATES } from '../data/sku-map.js';
+import { SPELLING, RENAMES, FAMILIES, DUPLICATES, SEPARATE } from '../data/sku-map.js';
 import { levenshtein } from './match.js';
 
 // ── 규칙 층 ──────────────────────────────────────────────────────────────────
@@ -80,13 +80,20 @@ function resolveRename(idx, key) {
 }
 
 function canonWith(idx, product, group) {
+  const sep = idx.separate.get(rawKey(product, group));
+  if (sep) return sep.id; // 같은 상품이라는 보장이 없어 떼어 둔 코드 — 규칙보다 먼저
   const d = idx.dupByRaw.get(rawKey(product, group));
   if (d && d.separated) return d.id;
   return resolveRename(idx, ruleKey(product, group));
 }
 
 function buildIndex() {
-  const idx = { rename: new Map(), dupByRaw: new Map(), dupById: new Map(), family: new Map(), familyEntry: new Map() };
+  const idx = { rename: new Map(), dupByRaw: new Map(), dupById: new Map(), separate: new Map(), family: new Map(), familyEntry: new Map() };
+  for (const e of SEPARATE) {
+    // 규칙이 합쳐 버리는 이름을 '#원래표기' 로 떼어 자기 자신으로 둔다 (DUPLICATES 와 같은 표기, 다만 상대(duplicateOf)는 없다)
+    const rk = ruleKey(e.name, e.group);
+    idx.separate.set(rawKey(e.name, e.group), { entry: e, id: `${rk}#${String(e.name).trim().replace(/\s+/g, '_')}` });
+  }
   for (const e of RENAMES) {
     const to = ruleKey(e.to, e.group);
     for (const f of e.from) idx.rename.set(ruleKey(f, e.group), { to, entry: e });
@@ -256,6 +263,8 @@ export function buildSeries(reports, { level = 'sku', check = true } = {}) {
     if (it.variants.length > 1 && !renamed) it.notes.push(`규칙으로 이음: ${it.variants.join(' = ')}`);
     const d = idx.dupById.get(it.id) || it.variants.map((v) => idx.dupByRaw.get(rawKey(v, it.group))).find(Boolean);
     if (d) { it.duplicateOf = d.ofKey; it.notes.push(`동시 판매 중복 → ${d.ofKey} (${d.entry.evidence})`); }
+    const sep = it.variants.map((v) => idx.separate.get(rawKey(v, it.group))).find(Boolean);
+    if (sep) it.notes.push(`떼어 둠: 규칙은 '${sep.entry.sameAs}' 와 합치지만 같은 상품인지 알 수 없다 (${sep.entry.evidence})`);
   }
   if (level === 'sku') {
     // 병합 가족(FAMILIES kind 'merge'): 구성 코드가 병합 코드 등장 전에 끝났으면 mergedInto, 병합 코드가 끝난 뒤 나왔으면 splitFrom

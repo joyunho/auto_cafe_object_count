@@ -149,9 +149,11 @@ function loadReal() {
     const k = `${x.group}|${x.product}`;
     if (x.price) (prices.get(k) || prices.set(k, new Set()).get(k)).add(x.price);
   }
+  // 월중에 가격이 바뀌면 POS 가 그 달 단가를 평균으로 찍는다(앙버터치아바타 2025-04: 7,277 vs 7,400, 아메리카노 2026-01: 5,523).
+  // 그래서 정확히 같은 단가가 없어도 3% 안이면 공유로 본다 — 교대 판정은 겹친 달·합계 연속이 따로 지킨다.
   const sharePrice = (group, a, b) => {
     const pa = prices.get(`${group}|${a}`), pb = prices.get(`${group}|${b}`);
-    return Boolean(pa && pb && [...pa].some((p) => pb.has(p)));
+    return Boolean(pa && pb && [...pa].some((p) => [...pb].some((q) => Math.abs(p - q) / Math.max(p, q) <= 0.03)));
   };
   return { reports, sku, fam, audit, sharePrice };
 }

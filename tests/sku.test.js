@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSalesReport } from '../src/logic/pos.js';
 import { canonicalKey, familyOf, ruleKey, normalizeSkuName, buildSeries, auditSeries, monthTotals, reportTotals, checkTotals, pairStatus } from '../src/logic/sku.js';
-import { RENAMES, FAMILIES, DUPLICATES, SPELLING } from '../src/data/sku-map.js';
+import { RENAMES, FAMILIES, DUPLICATES, SPELLING, SEPARATE } from '../src/data/sku-map.js';
 import { PRODUCT_MAP } from '../src/data/pos-map.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -522,8 +522,14 @@ test('실제 자료: 각 달 합계 불변, 대응표의 이름이 자료에 있
     if (familyOf(a) === familyOf(b)) assert.equal(normalizeSkuName(e.name).base, normalizeSkuName(e.of.name).base, `${e.name}: hot/ice 변형이 아닌데 가족이 같다`);
     else assert.ok(familyOf(a) in fam.items && familyOf(b) in fam.items && fam.items[familyOf(a)] !== fam.items[familyOf(b)]);
   }
+  // '#' 로 떼어 둔 id 는 DUPLICATES 의 분리 항목과 SEPARATE(같은 상품인지 알 수 없어 떼어 둔 것)뿐
   const hashIds = Object.keys(sku.items).filter((k) => k.includes('#'));
-  assert.deepEqual(hashIds.sort(), DUPLICATES.filter((e) => ruleKey(e.name, e.group) === ruleKey(e.of.name, e.of.group)).map((e) => canonicalKey(e.name, e.group)).sort());
+  const expectedHash = [
+    ...DUPLICATES.filter((e) => ruleKey(e.name, e.group) === ruleKey(e.of.name, e.of.group)).map((e) => canonicalKey(e.name, e.group)),
+    ...SEPARATE.map((e) => canonicalKey(e.name, e.group)),
+  ];
+  assert.deepEqual(hashIds.sort(), expectedHash.sort());
+  for (const e of SEPARATE) assert.ok(sku.items[canonicalKey(e.name, e.group)]?.variants.includes(e.name), `${e.name}(SEPARATE) 가 자료에 없다`);
 });
 
 // 2026-03 재등록 교대: 구코드는 3월을 마지막으로 끝나고 신코드는 3월에 시작하며, 이은 sku 의 2월→3월→4월 수량이 자연스럽게 이어진다.
@@ -552,7 +558,11 @@ test('실제 자료: 2026-03 교대 상품의 시계열이 끊기지 않는다',
     assert.equal(it.byMonth['2026-03'].rows, 2, `${id} 3월 원본 줄 2개`);
     const q = (m) => it.byMonth[m].qty;
     assert.ok(near(q('2026-03'), q('2026-02')) && near(q('2026-04'), q('2026-03')), `${id} 2→3→4월 비율: ${q('2026-02')} → ${q('2026-03')} → ${q('2026-04')}`);
-    assert.equal(it.monthsPresent, sku.months.length, `${id} 열두 달 전부 등장`);
+    // 처음 팔린 달부터 마지막 달까지 빠진 달이 없어야 한다. "전 기간 등장"은 자료가 12개월일 때만 참이었다 —
+    // 23개월(2024-08~)로 늘리자 메이플크림치즈처럼 2025-08 에 생긴 상품이 있다.
+    const present = sku.months.filter((m) => it.byMonth[m] && it.byMonth[m].qty !== 0);
+    const span = sku.months.slice(sku.months.indexOf(present[0]), sku.months.indexOf(present.at(-1)) + 1);
+    assert.deepEqual(present, span, `${id} 처음~마지막 사이에 빠진 달 없음`);
   }
   // 병합 가족: sku 로는 세 코드가 따로, 가족으로는 3월 전후가 이어진다
   const fam = buildSeries(reports, { level: 'family' });
