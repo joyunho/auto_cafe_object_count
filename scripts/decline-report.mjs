@@ -1,10 +1,14 @@
 // "요즘 매출이 떨어지는 이유" — 조언 없는 지표 보고서 → docs/analysis/decline.html → PDF
 //   node scripts/decline-report.mjs && node scripts/make-pdf.mjs docs/analysis/decline.html "docs/analysis/매출-지표-2026-03~07.pdf"
 //
+// 두 가지 모양: docs/analysis/decline-narrative.json 이 있으면 기승전결 서사형(표지·요약·1~4장·부록), 없으면 지표 나열형.
+//   서사형 본문은 워크플로가 findings 에서만 숫자를 가져와 쓰고 독자·감사 검토를 거친 것이다. 그림·표 값은 여기서 다시 계산한다.
+//   --indicators 를 주면 서사형 파일이 있어도 나열형으로 만든다.
+//
 // 숫자는 전부 실행 시점에 data/pos/*.txt 에서 다시 계산한다(그림·타일). 문장(지표·함께 일어난 것·한계)은
 // 워크플로가 반증까지 거쳐 남긴 docs/analysis/decline-findings.json 에서 읽는다. 둘 다 저장소에 올리지 않는다(매출 자료).
 //
-// 정의 — 실매출 R: 단가 > 0 인 줄의 금액 합(할인을 뺀 값). 진동벨 'N번' 줄·무료 옵션·포인트결제/계좌이체 조정줄은 단가 0 이라 빠진다.
+// 정의 — 실매출 R: 진동벨 'N번' 줄과 포인트결제/계좌이체 조정줄을 뺀 나머지 줄의 금액 합(할인을 뺀 값). scripts/decline-decomp.mjs 와 같은 정의.
 //        주문 수 대용: 진동벨 'N번' 줄 수량 합(페이지 넘김으로 '진동벨 9번' 처럼 그룹명이 붙은 줄도 센다).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,17 +27,18 @@ const f1 = (x) => (x > 0 ? '+' : '') + x.toFixed(1) + '%';
 const DRINK = ['커피', '티', '에이드', '라떼', '주스/병음료'];
 const FOOD = ['빵', '디저트', '쇼케이스', '브런치/밀키트'];
 const isBell = (x) => x.group === '진동벨' && /(^|\s)\d+번$/.test(x.product);
+const isPayment = (x) => x.group === '진동벨' && /^(포인트결제|계좌이체)$/.test(x.product);
 const M = {};
 for (const f of fs.readdirSync(path.join(root, 'data', 'pos')).filter((f) => /월.*\.txt$/.test(f))) {
   const r = parseSalesReport(fs.readFileSync(path.join(root, 'data', 'pos', f), 'utf8'));
   const e = (M[r.period.month] = { R: 0, D: 0, bell: 0, bread: 0, cups: 0, g: {} });
   for (const x of r.rows) {
     if (isBell(x)) { e.bell += x.qty; continue; }
-    if (x.price <= 0) continue;
+    if (isPayment(x)) continue;
     e.R += x.amount || 0; e.D += x.discount || 0;
     const g = (e.g[x.group] ||= { R: 0, D: 0 }); g.R += x.amount || 0; g.D += x.discount || 0;
-    if (x.group === '빵') e.bread += x.qty;
-    if (DRINK.includes(x.group)) e.cups += x.qty;
+    if (x.price > 0 && x.group === '빵') e.bread += x.qty;
+    if (x.price > 0 && DRINK.includes(x.group)) e.cups += x.qty;
   }
 }
 const have = Object.keys(M).sort();
@@ -166,6 +171,57 @@ function chart4() {
   return s + '</svg>';
 }
 
+// ── 표 1: 두 구간 비교 (값은 자료에서 계산) ──
+function table1() {
+  const rate = (ms) => { const R = sum(ms, (e) => e.R), D = sum(ms, (e) => e.D); return R + D ? (D / (R + D)) * 100 : 0; };
+  const rows = [
+    ['실매출 (5개월 합)', man(Rbase) + '만원', man(Rcur) + '만원', f1(pct(Rcur, Rbase))],
+    ['하루 평균 실매출', man(Rbase / days(BASE)) + '만원', man(Rcur / days(CUR)) + '만원', f1(pct(Rcur / days(CUR), Rbase / days(BASE)))],
+    ['진동벨 건수', bellBase.toLocaleString('ko-KR') + '건', bellCur.toLocaleString('ko-KR') + '건', f1(pct(bellCur, bellBase))],
+    ['벨 1건당 실매출', Math.round(Rbase / bellBase).toLocaleString('ko-KR') + '원', Math.round(Rcur / bellCur).toLocaleString('ko-KR') + '원', f1(pct(Rcur / bellCur, Rbase / bellBase))],
+    ['빵 개수', sum(BASE, (e) => e.bread).toLocaleString('ko-KR') + '개', sum(CUR, (e) => e.bread).toLocaleString('ko-KR') + '개', f1(pct(sum(CUR, (e) => e.bread), sum(BASE, (e) => e.bread)))],
+    ['음료 잔 수', sum(BASE, (e) => e.cups).toLocaleString('ko-KR') + '잔', sum(CUR, (e) => e.cups).toLocaleString('ko-KR') + '잔', f1(pct(sum(CUR, (e) => e.cups), sum(BASE, (e) => e.cups)))],
+    ['할인율 (정상가 대비)', rate(BASE).toFixed(1) + '%', rate(CUR).toFixed(1) + '%', (rate(CUR) - rate(BASE) > 0 ? '+' : '') + (rate(CUR) - rate(BASE)).toFixed(1) + '%p'],
+  ];
+  const perDay = (ms, f) => sum(ms, f) / days(ms);
+  const prev6 = [
+    ['하루 평균 실매출', man(dailyPrev6) + '만원', man(dailyCur) + '만원', f1(pct(dailyCur, dailyPrev6))],
+    ['하루 진동벨 건수', Math.round(perDay(PREV6, (e) => e.bell)) + '건', Math.round(perDay(CUR, (e) => e.bell)) + '건', f1(pct(perDay(CUR, (e) => e.bell), perDay(PREV6, (e) => e.bell)))],
+    ['하루 빵 개수', Math.round(perDay(PREV6, (e) => e.bread)) + '개', Math.round(perDay(CUR, (e) => e.bread)) + '개', f1(pct(perDay(CUR, (e) => e.bread), perDay(PREV6, (e) => e.bread)))],
+  ];
+  const cls = (d) => (d.startsWith('-') || d.startsWith('−') ? 'neg' : 'pos');
+  const tr = (r) => `<tr><td>${esc(r[0])}</td><td class="r">${esc(r[1])}</td><td class="r">${esc(r[2])}</td><td class="r ${cls(r[3])}">${esc(r[3])}</td></tr>`;
+  return `<table class="tbl"><thead><tr><th>전년 동월과 견줌</th><th class="r">2025년 3~7월</th><th class="r">2026년 3~7월</th><th class="r">차이</th></tr></thead>
+<tbody>${rows.map(tr).join('')}</tbody>
+<thead><tr class="sep"><th>직전 여섯 달과 견줌 (하루 평균)</th><th class="r">2025-09~2026-02</th><th class="r">2026-03~07</th><th class="r">차이</th></tr></thead>
+<tbody>${prev6.map(tr).join('')}</tbody></table>`;
+}
+
+// ── 서사형 (기승전결) ──
+const FIG = { 1: [chart1, '월별 실매출(막대)과 3개월 이동평균(선). 음영은 비교 기준 구간(2025-03~08)과 이번 구간(2026-03~07). 2024-09 는 결측.'], 2: [chart2, '그룹별 다섯 달 실매출 차이(2025-03~07 → 2026-03~07). 오른쪽 작은 글씨는 2025년 매출 비중.'], 3: [chart3, '정상가 대비 할인율. 굵은 선은 음료 5그룹 합·식품 4그룹 합, 얇은 선은 그룹별, 점선은 가격 인상 시점.'], 4: [chart4, '전년 동월 대비 변화율. 진동벨은 2024년 집계 방식이 달라 2026-01부터만 전년 비교가 성립한다.'] };
+function renderNarrative(nar) {
+  let figN = 0;
+  const block = (b) => {
+    if (b.kind === 'h3') return `<h3>${esc(b.text)}</h3>`;
+    if (b.kind === 'p') return `<p class="body">${esc(b.text)}</p>`;
+    if (b.kind === 'list') return `<ul class="body">${(b.items || []).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
+    const strip = (c) => (c || '').replace(/^\s*(그림|표)\s*\d+\s*[.．:]\s*/, '');
+    const chartOf = (b) => { const c = b.caption || ''; if (/이동평균|월별 실매출/.test(c)) return 1; if (/전년 동월|변화율/.test(c)) return 4; if (/그룹별|분해/.test(c)) return 2; if (/할인율/.test(c)) return 3; return Number(b.text); };
+    if (b.kind === 'figure') { const id = chartOf(b), [fn, cap] = FIG[id] || [null, '']; if (!fn) return ''; const n = ++figN; return `<figure>${fn()}<figcaption><b>그림 ${n}.</b> ${esc(strip(b.caption) || cap)}</figcaption></figure>`; }
+    if (b.kind === 'table') return `<figure class="tblfig"><figcaption class="top"><b>표 1.</b> ${esc(strip(b.caption) || '두 구간 비교 — 2025년 3~7월과 2026년 3~7월, 그리고 직전 6개월')}</figcaption>${table1()}</figure>`;
+    return '';
+  };
+  const secs = nar.sections.map((sec, i) => `<section class="${i > 0 && i < 4 ? 'keep' : ''}"><h2><span class="num">${esc(sec.num)}</span>${esc(sec.title)}</h2>${sec.blocks.map(block).join('')}</section>`).join('');
+  return `<div class="cover">
+  <div class="eyebrow">매출 지표 보고서 · 2026년 3~7월</div>
+  <h1>${esc(nar.cover.title)}</h1>
+  <p class="sub">${esc(nar.cover.subtitle)}</p>
+  <table class="meta"><tr><th>대상</th><td>씨앤비 베이커리 카페 1층 베이커리·카페 (인천 서구 아라로 117-1)</td></tr><tr><th>자료 범위</th><td>${esc(nar.cover.scope)}</td></tr><tr><th>작성 기준일</th><td>${esc(nar.cover.date)}</td></tr><tr><th>작성 원칙</th><td>있었던 일을 숫자로만 적었다. 원인 판단과 제안은 넣지 않았다.</td></tr></table>
+</div>
+<div class="summary"><div class="lbl">요약</div><ol>${nar.summary.map((t) => `<li>${esc(t)}</li>`).join('')}</ol></div>
+${secs}`;
+}
+
 // ── 문장 ──
 const bySection = (name) => findings.indicators.filter((i) => i.section === name);
 const indicatorList = (items) => `<ol class="ind">${items.map((i) => `<li><p>${esc(i.line)}</p><p class="num">${esc(i.numbers)}</p></li>`).join('')}</ol>`;
@@ -206,6 +262,20 @@ const html = `<!doctype html>
   ul { margin:0; padding-left:5mm; } ul li { margin-bottom:1.2mm; } ul.small li { font-size:8.2pt; color:var(--muted); }
   .pb { page-break-before:always; }
   footer { margin-top:5mm; padding-top:2mm; border-top:1px solid var(--line); font-size:8pt; color:var(--muted); }
+  /* 서사형 */
+  .cover { border-bottom:2px solid var(--ink); padding-bottom:4mm; margin-bottom:4mm; }
+  .cover .sub { font-size:11pt; color:var(--muted); margin:0 0 3mm; }
+  table.meta { border-collapse:collapse; font-size:8.5pt; } table.meta th { text-align:left; color:var(--muted); font-weight:500; padding:.6mm 4mm .6mm 0; white-space:nowrap; vertical-align:top; } table.meta td { padding:.6mm 0; }
+  .summary { background:var(--tint); border-left:3px solid var(--ink); padding:3mm 4.5mm; margin:0 0 5mm; page-break-inside:avoid; }
+  .summary .lbl { font-size:8pt; letter-spacing:.12em; color:var(--muted); text-transform:uppercase; margin-bottom:1mm; }
+  .summary ol { margin:0; padding-left:5mm; font-size:10.2pt; } .summary li { margin-bottom:1mm; }
+  section h2 .num { display:inline-block; min-width:7mm; margin-right:2mm; color:var(--muted); font-weight:500; }
+  h3 { font-size:10.2pt; margin:4mm 0 1.5mm; page-break-after:avoid; }
+  p.body { font-size:9.8pt; line-height:1.7; margin:0 0 2.6mm; text-align:justify; }
+  ul.body { font-size:9.6pt; line-height:1.65; margin:0 0 2.6mm; page-break-inside:avoid; }
+  figure.tblfig figcaption.top { margin:0 0 1.5mm; }
+  table.tbl { width:100%; border-collapse:collapse; font-size:9pt; } table.tbl th, table.tbl td { padding:1.6mm 2mm; border-bottom:1px solid var(--line); } table.tbl th { font-size:8pt; color:var(--muted); font-weight:500; border-bottom:1.5px solid var(--ink); text-align:left; }
+  table.tbl .r { text-align:right; font-variant-numeric:tabular-nums; } table.tbl .neg { color:var(--neg); } table.tbl .pos { color:var(--pos); } table.tbl tr.sep th { padding-top:3.5mm; }
 </style></head><body>
 
 <div class="eyebrow">씨앤비 베이커리 카페 · 1층 POS 지표 · ${esc(first)} ~ ${esc(last)}</div>
@@ -247,8 +317,17 @@ ${bullets(findings.cannotTell, 'small')}
 <h2>자료 범위와 정의</h2>
 ${bullets(findings.caveats.filter((t) => !/미커밋|이 세션/.test(t)), 'small')}
 
-<footer>자료: POS 「그룹별 매출분석」 월 보고서 ${have.length}개 (${esc(first)} ~ ${esc(last)}${missing.length ? `, ${missing.join('·')} 결측` : ''}). 실매출 = 단가 > 0 인 상품 줄의 금액 합(할인 차감 후). 주문 수 대용 = 진동벨 번호 발급 수. 외부 사건 출처: K-water 경인아라뱃길 공지, 기상청 월 기후특성·Open-Meteo 재분석, 통계청, 다이닝코드, 지역 언론. 그림 값은 실행 시점에 자료에서 다시 계산한 것.</footer>
+<footer>자료: POS 「그룹별 매출분석」 월 보고서 ${have.length}개 (${esc(first)} ~ ${esc(last)}${missing.length ? `, ${missing.join('·')} 결측` : ''}). 실매출 = 진동벨 'N번' 줄과 포인트결제·계좌이체 조정줄을 뺀 상품 줄의 금액 합(할인 차감 후). 주문 수 대용 = 진동벨 번호 발급 수. 외부 사건 출처: K-water 경인아라뱃길 공지, 기상청 월 기후특성·Open-Meteo 재분석, 통계청, 다이닝코드, 지역 언론. 그림 값은 실행 시점에 자료에서 다시 계산한 것.</footer>
 </body></html>`;
 
-fs.writeFileSync(path.join(outDir, 'decline.html'), html);
-console.log(`docs/analysis/decline.html — ${have.length}개월, 결측 ${missing.join(',') || '없음'}, 5개월 R ${man(Rbase)}→${man(Rcur)} (${f1(pct(Rcur, Rbase))}), 하루평균 직전6개월 대비 ${f1(pct(dailyCur, dailyPrev6))}, 벨 ${bellBase}→${bellCur}`);
+const narrativePath = path.join(outDir, 'decline-narrative.json');
+const useNarrative = fs.existsSync(narrativePath) && !process.argv.includes('--indicators');
+let out = html;
+if (useNarrative) {
+  const nar = JSON.parse(fs.readFileSync(narrativePath, 'utf8'));
+  const body = renderNarrative(nar);
+  // 스타일·푸터는 그대로 두고 본문만 바꾼다
+  out = html.replace(/<body>[\s\S]*<footer>/, `<body>\n${body}\n<footer>`);
+}
+fs.writeFileSync(path.join(outDir, 'decline.html'), out);
+console.log(`docs/analysis/decline.html (${useNarrative ? '서사형' : '나열형'}) — ${have.length}개월, 결측 ${missing.join(',') || '없음'}, 5개월 R ${man(Rbase)}→${man(Rcur)} (${f1(pct(Rcur, Rbase))}), 하루평균 직전6개월 대비 ${f1(pct(dailyCur, dailyPrev6))}, 벨 ${bellBase}→${bellCur}`);
